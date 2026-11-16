@@ -6,6 +6,8 @@ try{for(const l of fs.readFileSync(path.join(__dirname,'.env'),'utf8').split('\n
 const KEY=process.env.GEMINI_API_KEY,MODEL=process.env.GEMINI_MODEL||'gemini-2.5-flash',BASE=process.env.GEMINI_BASE_URL||'https://generativelanguage.googleapis.com/v1beta',PORT=process.env.PORT||3000;
 const GKEY=process.env.GROQ_API_KEY,GMODEL=process.env.GROQ_MODEL||'llama-3.3-70b-versatile',GBASE=process.env.GROQ_BASE_URL||'https://api.groq.com/openai/v1';
 const PUB=path.join(__dirname,'public'),DATA=path.join(__dirname,'data'),MIME={'.html':'text/html; charset=utf-8','.json':'application/json','.js':'text/javascript','.css':'text/css'};
+// Other sites allowed to call /api/* from the browser (e.g. the GitHub Pages copy). Comma separated; empty = same site only.
+const ORIGINS=(process.env.ALLOWED_ORIGINS||'').split(',').map(o=>o.trim().replace(/[/]+$/,'')).filter(Boolean);
 const hits=new Map();const limited=ip=>{const now=Date.now(),a=(hits.get(ip)||[]).filter(t=>now-t<60000);a.push(now);hits.set(ip,a);return a.length>20};
 const send=(res,code,obj)=>{res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(obj))};
 const toContents=input=>(typeof input=='string'?[{role:'user',content:input}]:input).map(t=>({role:t.role=='assistant'?'model':'user',parts:[{text:String(t.content).slice(0,30000)}]}));
@@ -30,6 +32,8 @@ async function askAI(input){
  if(GKEY)return await groq(input);
  throw new Error('No AI key is set on the server.')}
 http.createServer(async(req,res)=>{const url=req.url.split('?')[0];
+ if(url.startsWith('/api/')){const o=req.headers.origin;if(o&&ORIGINS.includes(o)){res.setHeader('Access-Control-Allow-Origin',o);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type')}
+  if(req.method=='OPTIONS'){res.writeHead(204);return res.end()}}
  if(url=='/api/health')return send(res,200,{ai:!!(KEY||GKEY),provider:KEY?'gemini':(GKEY?'groq':null),backup:!!(KEY&&GKEY),model:KEY?MODEL:(GKEY?GMODEL:null)});
  if(url=='/api/ai'&&req.method=='POST'){if(!KEY&&!GKEY)return send(res,503,{error:'Neither GEMINI_API_KEY nor GROQ_API_KEY is set on the server.'});if(limited(req.socket.remoteAddress))return send(res,429,{error:'Too many requests'});
   let body='';for await(const c of req){body+=c;if(body.length>200000)return send(res,413,{error:'Too large'})}

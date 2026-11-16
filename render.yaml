@@ -14,3 +14,5 @@ services:
         sync: false        # optional backup; used only if GEMINI_API_KEY is missing or a Gemini call fails
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
+      - key: ALLOWED_ORIGINS
+        value: https://mabattlebot.github.io   # lets the GitHub Pages copy of the site use this AI backend
