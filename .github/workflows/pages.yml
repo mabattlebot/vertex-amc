@@ -1,0 +1,46 @@
+name: Deploy to GitHub Pages
+
+# Publishes the static frontend in public/ to GitHub Pages.
+# GitHub Pages cannot run server.js, so API keys are never part of this site.
+# For the live AI tutor, set the repository variable VERTEX_API_URL to the URL of the
+# deployed server.js (e.g. https://vertex.onrender.com). Without it the site still works;
+# only the AI tutor is off.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Point the frontend at the AI backend
+        env:
+          VERTEX_API_URL: ${{ vars.VERTEX_API_URL }}
+        run: |
+          node -e 'require("fs").writeFileSync("public/config.js", "window.VERTEX_API = " + JSON.stringify(process.env.VERTEX_API_URL || "") + ";\n")'
+          cat public/config.js
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
