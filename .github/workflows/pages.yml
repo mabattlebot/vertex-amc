@@ -33,7 +33,12 @@ jobs:
         env:
           VERTEX_API_URL: ${{ vars.VERTEX_API_URL }}
         run: |
-          node -e 'require("fs").writeFileSync("public/config.js", "window.VERTEX_API = " + JSON.stringify(process.env.VERTEX_API_URL || "") + ";\n")'
+          node -e '
+            const fs = require("fs"), f = "public/config.js";
+            const line = "window.VERTEX_API = " + JSON.stringify(process.env.VERTEX_API_URL || "") + ";";
+            const s = fs.readFileSync(f, "utf8"), out = s.replace(/^window\.VERTEX_API = .*;$/m, line);
+            if (out === s && !s.includes(line)) throw new Error("VERTEX_API line not found in " + f);
+            fs.writeFileSync(f, out);'
           cat public/config.js
 
       - uses: actions/configure-pages@v5

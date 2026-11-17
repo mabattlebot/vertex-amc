@@ -35,3 +35,15 @@ All 941 AMC 10 problems (2002-2020, A and B) are included. 72 are typeset in LaT
 
 ## Math rendering
 All math is written in LaTeX and typeset with MathJax (loaded from cdnjs, with jsDelivr as a fallback).
+
+## Accounts and saved progress (Supabase)
+The Profile / Sign in tab lets visitors create an account and keep their progress, solved problems and answer history across devices. Without an account, progress stays in the browser as before.
+- Settings live in `public/config.js` (`VERTEX_SUPABASE`). The publishable key is meant to be public; access is enforced by row level security.
+- One-time setup in the Supabase dashboard:
+  1. **SQL Editor**: run `supabase/schema.sql` (creates the `progress` and `attempts` tables and their security rules).
+  2. **Authentication → URL Configuration**: set **Site URL** to `https://mabattlebot.github.io/vertex-amc/` and add `https://mabattlebot.github.io/vertex-amc/**` and `http://localhost:3000/**` to **Redirect URLs**.
+  3. **Authentication → Sign In / Providers → Email**: Supabase's built-in email service only sends a few emails per hour, so either turn off **Confirm email** or set up custom SMTP before opening sign-ups to the public.
+- Code: `public/cloud.js`. The main app calls `onVertexSave`, `onVertexAttempt` and `onVertexReset` hooks; nothing else in the app depends on Supabase.
+
+## Answer keys and solutions
+Only answer keys that have been checked are built in (see the notes above `KEYS0` in `public/index.html`). Other contests show "No answer key yet"; a key can be typed on the Library page (saved in the browser, and in the account when signed in). After answering, each problem links to its AoPS wiki solutions page.
