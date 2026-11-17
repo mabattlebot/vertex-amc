@@ -61,7 +61,7 @@ textarea,input[type=text],select{width:100%;font:inherit;color:var(--ink);backgr
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
 </style>
 <div class="app"><nav class="side" aria-label="Sections"><div class="logo"><i>V</i>Vertex</div>
-<a href="#dashboard" data-r="dashboard">Dashboard</a><a href="#concepts" data-r="concepts">Learn</a><a href="#trainer" data-r="trainer">Trainer</a><a href="#lessons" data-r="lessons">Speed</a><a href="#library" data-r="library">Library</a></nav>
+<a href="#dashboard" data-r="dashboard">Dashboard</a><a href="#concepts" data-r="concepts">Learn</a><a href="#trainer" data-r="trainer">Trainer</a><a href="#lessons" data-r="lessons">Speed</a><a href="#library" data-r="library">Library</a><a href="#profile" data-r="profile" id="navProfile" class="pf-nav">Sign in</a></nav>
 <main id="main"></main></div>
 <script src="config.js"></script>
 <script>
@@ -2962,7 +2962,7 @@ const num=v=>{v=String(v).trim().replace(/,/g,'');if(/^-?\d+(\.\d+)?\/\d+(\.\d+)
 let S={solved:0,correct:0,fast:0,time:0,ad:2,topics:{},seen:{},speed:{},cm:{}};
 try{const r=localStorage.getItem('vertex-v3');if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
 S.cm=Object.assign({done:{},cur:null,stage:'intro',step:0,li:0,pq:[],pi:0,miss:0},S.cm||{});
-const save=()=>{try{localStorage.setItem('vertex-v3',JSON.stringify(S))}catch(e){}};
+const save=()=>{try{localStorage.setItem('vertex-v3',JSON.stringify(S))}catch(e){}if(window.onVertexSave)onVertexSave()};
 /* Progress saved by an earlier version can point at lessons or shortcuts that no longer exist
    (the 6 broad lessons became 256 specific ones). Drop only those stale pointers; keep all stats. */
 (function migrate(){const s=S.cm;if(!s.done||typeof s.done!='object')s.done={};
@@ -3021,6 +3021,8 @@ const byId=id=>ALL.find(p=>p.id==id);
 let KEYS={};try{KEYS=JSON.parse(localStorage.getItem('vertex-keys')||'{}')}catch(e){}
 // KEYS0 is defined earlier (injected by build.py)
 const ckey=p=>p.year+p.contest.slice(-1);
+const aops=p=>'https://artofproblemsolving.com/wiki/index.php/'+p.year+'_AMC_10'+p.contest.slice(-1)+'_Problems/Problem_'+p.number;
+const aopsLink=p=>`<a href="${aops(p)}" target="_blank" rel="noopener">Solutions on AoPS</a>`;
 const ansOf=p=>{if(p.answer!=null)return p.answer;
  // built-in official key first, then teacher-entered key
  const src=KEYS[ckey(p)]||KEYS0[ckey(p)]||'';
@@ -3035,9 +3037,9 @@ function probCard(){const p=Q.p,done=Q.phase!='solve',ans=ansOf(p),long=p.text&&
  return `<div class="cite"><b>${cite(p)}</b><span class="chip">${p.topic}</span><span class="chip w">Difficulty ${p.d} of 5</span></div>${p.text?`<div class="ptext">${M(p.text)}</div>${FIG[p.id]?`<div class="fig"><img src="${FIG[p.id]}" alt="Diagram for ${cite(p)}"></div>`:''}`:shot(p)}
  <div class="chs${long?' long':''}${p.text?'':' let'}" role="group" aria-label="Answer choices">${L5.split('').map((l,i)=>`<button class="ch ${done?(ans!=null&&i==ans?'ok':i==Q.sel?(ans==null?'sel':'bad'):''):(i==Q.sel?'sel':'')}" ${done?'disabled':''} data-i="${i}" onclick="choose(${i})" aria-label="Choice ${l}"><b>${l}</b>${p.text?`<span>${M(p.choices[i])}</span>`:''}</button>`).join('')}</div>`}
 function choose(i){Q.sel=i;document.querySelectorAll('.ch').forEach(b=>b.classList.toggle('sel',+b.dataset.i==i));const s=$('#sub');if(s)s.disabled=false}
-function submitQ(){if(!Q||Q.sel==null||Q.phase!='solve')return;Q.el=stopTimer();const ans=ansOf(Q.p);if(ans==null){Q.unk=true;S.seen[Q.p.id]=S.seen[Q.p.id]||3}else{Q.ok=Q.sel===ans;Q.fast=record(Q.p.topic,Q.ok,Q.el,Q.p.d);S.seen[Q.p.id]=Q.ok?1:2}save();Q.phase=Q.needWhy?'explain':'feedback';CO.reveal=true;setCoachCtx();render()}
-const resultBan=()=>{const p=Q.p,ans=ansOf(p);if(Q.unk)return `<div class="ban note"><b>Recorded: (${L5[Q.sel]}).</b> The answer key for the ${p.year} ${p.contest} has not been added yet, so this problem cannot be graded automatically. <div class="mono">Your time ${mmss(Q.el)} · target ${mmss(TT)}</div></div>`;
- return `<div class="ban ${Q.ok?'ok':'bad'}"><b>${Q.ok?'Correct.':'Not quite. The answer is ('+L5[ans]+') '}</b>${Q.ok||!p.text?'':M(p.choices[ans])} <div>${timeNote(Q.el,Q.fast)}</div></div>`};
+function submitQ(){if(!Q||Q.sel==null||Q.phase!='solve')return;Q.el=stopTimer();const ans=ansOf(Q.p);if(ans==null){Q.unk=true;S.seen[Q.p.id]=S.seen[Q.p.id]||3}else{Q.ok=Q.sel===ans;Q.fast=record(Q.p.topic,Q.ok,Q.el,Q.p.d);S.seen[Q.p.id]=Q.ok?1:2}if(window.onVertexAttempt)onVertexAttempt({problem_id:Q.p.id,choice:L5[Q.sel],correct:ans==null?null:Q.ok,seconds:Math.round(Q.el)});save();Q.phase=Q.needWhy?'explain':'feedback';CO.reveal=true;setCoachCtx();render()}
+const resultBan=()=>{const p=Q.p,ans=ansOf(p);if(Q.unk)return `<div class="ban note"><b>Recorded: (${L5[Q.sel]}).</b> The answer key for the ${p.year} ${p.contest} has not been added yet, so this problem cannot be graded automatically. <div class="mono">Your time ${mmss(Q.el)} · target ${mmss(TT)}</div><div class="mt2">${aopsLink(p)}</div></div>`;
+ return `<div class="ban ${Q.ok?'ok':'bad'}"><b>${Q.ok?'Correct.':'Not quite. The answer is ('+L5[ans]+') '}</b>${Q.ok||!p.text?'':M(p.choices[ans])} <div>${timeNote(Q.el,Q.fast)}</div><div class="mt2">${aopsLink(p)}</div></div>`};
 const probFacts=p=>p.text?`Problem (${cite(p)}): ${p.text}\nChoices: ${p.choices.map((c,i)=>'('+L5[i]+') '+c).join('  ')}`:`Problem (${cite(p)}), read by OCR from a screenshot so symbols may be garbled or missing: ${p.o}`;
 async function judge(){const p=Q.p;if(!AI)return{src:'local'};
  const prompt=`You are an expert, kind AMC math coach giving feedback on a student's written reasoning.\n${probFacts(p)}\nCorrect answer: (${L5[ansOf(p)]}) ${p.choices[ansOf(p)]}\n${p.sol?'Trusted solution outline: '+p.sol:'No written solution is on file; work the problem out carefully yourself before judging.'}\nThe student chose (${L5[Q.sel]}) ${p.choices[Q.sel]}, which is ${Q.ok?'correct':'incorrect'}.\nStudent's reasoning: """${Q.why}"""\nReply in exactly this format, one item per line, each under 60 words:\nVERDICT: sound | partial | flawed | unclear\nWORKED: what in their reasoning was right\nMISCONCEPTION: the specific wrong idea or slip that most likely produced their answer (or "none")\nFIX: how to correct that idea, shown on this problem\nHABIT: one habit that would make them faster or safer next time\n${STYLE}`;
@@ -3371,10 +3373,10 @@ function trainer(){const f=TR.queue?`<div class="ban info row"><span>Practicing 
  else card+=resultBan()+fbHTML()+`<p class="mt"><button class="btn pri" onclick="trPick();render();window.scrollTo(0,0)">${TR.queue&&TR.qi>=TR.queue.length-1?'Finish this set':'Next problem'}</button></p>`;
  return head+`<div class="g g2 mt"><div class="card">${card}</div><div class="card" id="coach">${coachHTML()}</div></div>`}
 function libRows(){const f=LB,q=f.q.toLowerCase(),r=ALL.filter(p=>(!f.y||p.year==f.y)&&(!f.c||p.contest==f.c)&&(!f.t||p.topic==f.t)&&(!f.d||p.d==f.d)&&(!q||((p.text||'')+' '+p.o+' '+p.topic+' '+cite(p)).toLowerCase().includes(q)));
- return `<p class="mono">${r.length} of ${ALL.length} problems</p>`+r.slice(0,LB.n||10).map(p=>`<div class="card mt2"><div class="cite"><b>${cite(p)}</b><span class="chip">${p.topic}</span><span class="chip w">Difficulty ${p.d}</span>${ansOf(p)==null?'<span class="chip">No answer key yet</span>':''}${S.seen[p.id]==1||S.seen[p.id]==2?`<span class="chip ${S.seen[p.id]==1?'o':'r'}">${S.seen[p.id]==1?'Solved':'Missed'}</span>`:''}<span class="sp"></span><button class="btn sm" onclick="TR.queue=null;trPick(byId('${p.id}'));location.hash='trainer'">Practice this</button></div>${p.text?`<div class="mt2">${M(p.text)}</div>`:shot(p)}</div>`).join('')+(r.length>(LB.n||10)?`<p class="mt"><button class="btn" onclick="LB.n=(LB.n||10)+10;libUp()">Show more</button></p>`:'')}
+ return `<p class="mono">${r.length} of ${ALL.length} problems</p>`+r.slice(0,LB.n||10).map(p=>`<div class="card mt2"><div class="cite"><b>${cite(p)}</b><span class="chip">${p.topic}</span><span class="chip w">Difficulty ${p.d}</span>${ansOf(p)==null?'<span class="chip">No answer key yet</span>':''}${S.seen[p.id]==1||S.seen[p.id]==2?`<span class="chip ${S.seen[p.id]==1?'o':'r'}">${S.seen[p.id]==1?'Solved':'Missed'}</span>`:''}<span class="sp"></span><a class="btn sm gh" href="${aops(p)}" target="_blank" rel="noopener">AoPS solutions</a><button class="btn sm" onclick="TR.queue=null;trPick(byId('${p.id}'));location.hash='trainer'">Practice this</button></div>${p.text?`<div class="mt2">${M(p.text)}</div>`:shot(p)}</div>`).join('')+(r.length>(LB.n||10)?`<p class="mt"><button class="btn" onclick="LB.n=(LB.n||10)+10;libUp()">Show more</button></p>`:'')}
 function libUp(){const e=$('#libr');if(e){e.innerHTML=libRows();fillImgs()}}
 const needKey=()=>[...new Set(ALL.filter(p=>ansOf(p)==null).map(ckey))].sort().reverse();
-function saveKey(){const c=($('#keyc')||{}).value,v=String(($('#keyv')||{}).value||'').toUpperCase().replace(/[^A-E]/g,''),m=$('#keymsg');if(!c||v.length!=25){if(m)m.textContent='Enter exactly 25 letters from A to E, in problem order.';return}KEYS[c]=v;try{localStorage.setItem('vertex-keys',JSON.stringify(KEYS))}catch(e){}render()}
+function saveKey(){const c=($('#keyc')||{}).value,v=String(($('#keyv')||{}).value||'').toUpperCase().replace(/[^A-E]/g,''),m=$('#keymsg');if(!c||v.length!=25){if(m)m.textContent='Enter exactly 25 letters from A to E, in problem order.';return}KEYS[c]=v;try{localStorage.setItem('vertex-keys',JSON.stringify(KEYS))}catch(e){}if(window.onVertexSave)onVertexSave();render()}
 function library(){const nk=needKey();return `<div class="ov">Library</div><h1>All ${ALL.length} problems</h1><p class="t2">Every AMC 10 problem from your screenshots, 2002 to 2020, A and B. All ${DB.length} are typeset in LaTeX, with diagrams kept wherever a problem needs one; ${ALL.filter(p=>p.sol).length} also have a written solution. Search works on the problem text.</p>
  <div class="row mt">${selHTML('LB','y','Year',[['','All years'],...uniq('year').reverse().map(v=>[v,v])],'LB.n=10;libUp()')}${selHTML('LB','c','Contest',[['','All contests'],...uniq('contest').map(v=>[v,v])],'LB.n=10;libUp()')}${selHTML('LB','t','Topic',[['','All topics'],...uniq('topic').map(v=>[v,v])],'LB.n=10;libUp()')}${selHTML('LB','d','Difficulty',[['','Any difficulty'],...[1,2,3,4,5].map(v=>[v,'Difficulty '+v])],'LB.n=10;libUp()')}<input type="text" id="libq" placeholder="Search problem text…" style="max-width:240px" oninput="LB.q=this.value;LB.n=10;libUp()" value="${esc(LB.q)}" aria-label="Search problems"></div><div id="libr" class="mt">${libRows()}</div>
  <div class="card mt"><h3>Answer keys</h3><p class="t2">${ALL.filter(p=>ansOf(p)!=null).length} of ${ALL.length} problems are graded automatically (only answer keys that have been checked are built in). ${nk.length?`To grade another contest, choose it and type its 25 official answers. They are saved in this browser.`:'Every contest has a key.'}</p>${nk.length?`<div class="row"><select id="keyc" aria-label="Contest" style="width:auto">${nk.map(c=>`<option value="${c}">${c.slice(0,4)} AMC 10${c.slice(4)}</option>`).join('')}</select><input type="text" id="keyv" maxlength="40" placeholder="25 letters, for example ABCDE…" style="max-width:320px" aria-label="Answer key"><button class="btn" onclick="saveKey()">Save key</button></div><p class="mono" id="keymsg"></p>`:''}</div>
@@ -3435,7 +3437,7 @@ function dashboard(){const acc=S.solved?Math.round(100*S.correct/S.solved):0,s=S
  <h3 class="mt">Accuracy by topic</h3>${Object.keys(S.topics).length?Object.entries(S.topics).map(([k,t])=>`<div class="mt2"><div class="row"><span>${k}</span><span class="sp"></span><span class="mono">${Math.round(100*t.c/t.n)}% of ${t.n}</span></div><div class="bar ${t.c/t.n>=.7?'ok':''}"><i style="width:${100*t.c/t.n}%"></i></div></div>`).join(''):'<p class="t3">Solve a few problems to see strengths and weak spots.</p>'}
  <h3 class="mt">Speed shortcuts</h3><p class="t2">${Object.keys(S.speed).length} of ${SP.length} guided shortcuts practiced · ${TOP.topics.length} topics and ${ALL.length} problems available.</p></div></div>
  <p class="mt"><button class="btn gh" onclick="resetAll(this)">Reset progress</button></p>`}
-function resetAll(b){if(b.dataset.s){try{localStorage.removeItem('vertex-v3')}catch(e){}location.reload()}else{b.dataset.s=1;b.textContent='Click again to confirm reset'}}
+function resetAll(b){if(b.dataset.s){try{localStorage.removeItem('vertex-v3')}catch(e){}b.disabled=true;Promise.resolve(window.onVertexReset&&onVertexReset()).catch(()=>{}).finally(()=>location.reload())}else{b.dataset.s=1;b.textContent='Click again to confirm reset'}}
 /* ---------- routing ---------- */
 const views={dashboard,concepts,trainer,lessons,library,probLesson:()=>probLessonHTML()};
 function render(){document.querySelectorAll('.side a').forEach(a=>a.classList.toggle('on',a.dataset.r==route));const m=$('#main');if(!m)return;m.innerHTML=views[route]?views[route]():'';draw();fillImgs();const c=$('#chat');if(c)c.scrollTop=c.scrollHeight}
@@ -3450,4 +3452,6 @@ addEventListener('hashchange',go);go();
 (function load(u){if(!u.length)return;const s=document.createElement('script');s.src=u[0];s.async=true;s.onerror=()=>load(u.slice(1));document.head.appendChild(s)})(['https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js','https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.js','https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js']);
 
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" crossorigin="anonymous"></script>
+<script src="cloud.js"></script>
 </body></html>
