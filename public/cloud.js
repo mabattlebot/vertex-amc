@@ -112,7 +112,13 @@
     if (!P.user || P.user.id !== was) P.editor = null;
     if (LINK) LINK.textContent = P.user ? 'Profile' : 'Sign in';
     if (P.user && P.user.id !== was) adopt();
+    // Tell the app (AI features need a signed-in user); after signing in from an AI prompt, go back there.
+    window.vertexSignedIn = !!P.user;
+    if (window.onVertexAuth) onVertexAuth();
+    if (P.user && window.vertexReturn && route === 'profile') { const r = window.vertexReturn; window.vertexReturn = null; location.hash = r; }
   }
+  // The AI server checks this token with Supabase on every request. getSession refreshes it when it is about to expire.
+  window.vertexToken = async () => { const { data } = await sb.auth.getSession(); return data.session ? data.session.access_token : null; };
   sb.auth.onAuthStateChange((event, session) => {
     if (event === 'PASSWORD_RECOVERY') { P.recovery = true; location.hash = 'profile'; }
     P.ready = true;
