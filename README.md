@@ -46,4 +46,9 @@ The Profile / Sign in tab lets visitors create an account and keep their progres
 - Code: `public/cloud.js`. The main app calls `onVertexSave`, `onVertexAttempt` and `onVertexReset` hooks; nothing else in the app depends on Supabase.
 
 ## Answer keys and solutions
-Only answer keys that have been checked are built in (see the notes above `KEYS0` in `public/index.html`). Other contests show "No answer key yet"; a key can be typed on the Library page (saved in the browser, and in the account when signed in). After answering, each problem links to its AoPS wiki solutions page.
+Grading uses, in order: keys entered by editors (Supabase `answer_keys` table), answers checked by hand (per-problem answers and the notes above `KEYS0` in `public/index.html`), then a key a visitor typed on the Library page (that browser only). Contests with none of these show "No answer key yet".
+
+**Entering keys (editors):** open `#keys` (linked from the Library page). It shows one test at a time, titled by year and session (e.g. "2004 · AMC 10B"), oldest first, starting with the first test without a saved key. Enter or paste the 25 answers and choose **Save and go to next test**. Nothing is prefilled; if an answer differs from one checked by hand, saving needs an extra confirmation. Every save is logged in `answer_key_history`. To make an account an editor, run in the SQL Editor:
+```sql
+insert into public.key_editors (user_id) select id from auth.users where email = 'you@example.com';
+``` After answering, each problem links to its AoPS wiki solutions page.
