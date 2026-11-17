@@ -12,7 +12,8 @@
     views.profile = () => `<div class="ov">Profile</div><h1>Accounts are not available</h1>
       <div class="card mt"><p class="t2">${window.supabase ? 'This copy of Vertex has no account service configured.' : 'The account service could not be loaded. Check your connection and reload the page.'}
       Your progress is still saved in this browser.</p></div>`;
-    if (location.hash === '#profile') go();
+    views.keys = views.profile;
+    if (location.hash === '#profile' || location.hash === '#keys') go();
     return;
   }
 
@@ -108,6 +109,7 @@
   function setUser(u) {
     const was = P.user && P.user.id;
     P.user = u || null;
+    if (!P.user || P.user.id !== was) P.editor = null;
     if (LINK) LINK.textContent = P.user ? 'Profile' : 'Sign in';
     if (P.user && P.user.id !== was) adopt();
   }
@@ -233,12 +235,138 @@
   views.profile = () => `<div class="ov">Profile</div><h1>${P.user ? 'Your profile' : 'Sign in to save your progress'}</h1>
     ${!P.ready ? '<div class="card mt"><p class="t2">Checking your sign-in…</p></div>' : P.user && !P.recovery ? signedIn() : signedOut()}`;
 
+  // ---------- answer keys entered by editors ----------
+  // Everyone loads them (grading uses them first). Only accounts listed in key_editors can save.
+  function useKeys(rows) {
+    const next = {};
+    for (const r of rows || []) if (/^[A-E]{25}$/.test(r.answers)) next[r.contest] = r.answers;
+    DBKEYS = next;
+    try { localStorage.setItem('vertex-dbkeys', JSON.stringify(next)); } catch (e) {}
+    for (const k of Object.keys(POOLC)) delete POOLC[k]; // lesson problem lists depend on which problems are gradable
+  }
+  async function loadKeys() {
+    const { data, error } = await sb.from('answer_keys').select('contest, answers, updated_at');
+    if (error) { console.warn('Vertex answer keys:', error.message); KW.loadErr = error.message; }
+    else { useKeys(data); KW.loadErr = ''; KW.meta = Object.fromEntries(data.map(r => [r.contest, r.updated_at])); }
+    KW.loaded = true; render();
+  }
+  loadKeys();
+
+  async function checkEditor() {
+    P.editor = 'checking';
+    const { data, error } = await sb.from('key_editors').select('user_id').eq('user_id', P.user.id).maybeSingle();
+    P.editor = error ? { error: error.message } : !!data;
+    if (route === 'keys') render();
+  }
+
+  // All tests in the library, oldest first: 2002 A, 2002 B, ..., 2020 B.
+  const TESTS = [...new Set(ALL.map(ckey))].sort();
+  const label = c => `${c.slice(0, 4)} · AMC 10${c.slice(4)}`;
+  const KW = { i: null, letters: [], show: false, msg: '', err: false, confirm: false, busy: false, loaded: false, loadErr: '', meta: {} };
+  const checked = c => { // answers already checked by hand for this test (problem number -> letter)
+    const out = {};
+    for (const p of ALL) if (ckey(p) === c) {
+      const k = p.answer != null ? L5[p.answer] : (KEYS0[c] || '')[p.number - 1];
+      if (k) out[p.number] = k;
+    }
+    return out;
+  };
+  const status = c => DBKEYS[c] ? 'saved' : Object.keys(checked(c)).length ? 'checked' : 'needed';
+  function openTest(i) {
+    KW.i = (i + TESTS.length) % TESTS.length;
+    const c = TESTS[KW.i];
+    KW.letters = (DBKEYS[c] || '').split('').concat(Array(25).fill('')).slice(0, 25);
+    KW.msg = ''; KW.confirm = false;
+    render(); scrollTo(0, 0);
+  }
+  function conflicts() {
+    const ck = checked(TESTS[KW.i]);
+    return Object.entries(ck).filter(([n, k]) => KW.letters[n - 1] && KW.letters[n - 1] !== k).map(([n, k]) => ({ n: +n, k, mine: KW.letters[n - 1] }));
+  }
+  function rowsHtml() {
+    const c = TESTS[KW.i], have = new Set(ALL.filter(p => ckey(p) === c).map(p => p.number));
+    return Array.from({ length: 25 }, (_, j) => {
+      const n = j + 1, p = byId(c + n), cur = KW.letters[j];
+      const btns = L5.split('').map(l => `<button type="button" class="kw-b${cur === l ? ' on' : ''}" aria-pressed="${cur === l}" aria-label="Problem ${n}: ${l}" onclick="VK.set(${j},'${l}')">${l}</button>`).join('');
+      const prob = KW.show && p ? `<div class="kw-p">${p.text ? M(p.text) + '<div class="kw-c">' + p.choices.map((x, i) => `<span><b>(${L5[i]})</b> ${M(x)}</span>`).join('') + '</div>' : esc(p.o || '')}</div>` : '';
+      return `<div class="kw-r"><span class="kw-n">${n}</span><span class="kw-bs" role="group" aria-label="Answer for problem ${n}">${btns}</span>${have.has(n) ? '' : '<span class="chip">Not in this library</span>'}${prob}</div>`;
+    }).join('');
+  }
+  function refresh() { // update the answer rows and summary without rebuilding the inputs being typed in
+    const r = document.getElementById('kwRows'); if (r) r.innerHTML = rowsHtml();
+    const q = document.getElementById('kwQuick'), s = KW.letters.join('');
+    if (q && document.activeElement !== q) q.value = s;
+    const st = document.getElementById('kwSum'); if (st) st.innerHTML = summary();
+  }
+  function summary() {
+    const n = KW.letters.filter(Boolean).length, cf = conflicts();
+    return `<p class="mono">${n} of 25 answered</p>` + (cf.length ? `<div class="ban bad"><b>Check these before saving.</b> They differ from answers that were checked by hand:
+      ${cf.map(x => `#${x.n}: you entered ${x.mine}, checked answer is ${x.k}`).join('; ')}.
+      <label class="kw-cf"><input type="checkbox" ${KW.confirm ? 'checked' : ''} onchange="VK.confirm(this.checked)"> My answers are correct; save them anyway</label></div>` : '');
+  }
+
+  window.VK = {
+    open: i => openTest(i),
+    set(j, l) { KW.letters[j] = KW.letters[j] === l ? '' : l; KW.confirm = false; refresh(); },
+    quick(v) { const s = String(v).toUpperCase().replace(/[^A-E]/g, '').slice(0, 25); KW.letters = s.split('').concat(Array(25).fill('')).slice(0, 25); KW.confirm = false; refresh(); },
+    confirm(b) { KW.confirm = b; },
+    toggleShow() { KW.show = !KW.show; render(); },
+    clear() { KW.letters = Array(25).fill(''); KW.confirm = false; render(); },
+    async save() {
+      const c = TESTS[KW.i], answers = KW.letters.join('');
+      if (!/^[A-E]{25}$/.test(answers)) { KW.msg = 'Enter all 25 answers before saving.'; KW.err = true; return render(); }
+      if (conflicts().length && !KW.confirm) { KW.msg = 'Some answers differ from checked answers. Review them, then tick the box to save anyway.'; KW.err = true; return render(); }
+      KW.busy = true; KW.msg = ''; render();
+      const { error } = await sb.from('answer_keys').upsert({ contest: c, answers });
+      KW.busy = false;
+      if (error) { KW.msg = 'Not saved: ' + error.message; KW.err = true; return render(); }
+      DBKEYS[c] = answers; KW.meta[c] = new Date().toISOString(); useKeys(Object.entries(DBKEYS).map(([contest, a]) => ({ contest, answers: a })));
+      const next = TESTS.findIndex((t, j) => j > KW.i && !DBKEYS[t]);
+      openTest(next >= 0 ? next : KW.i + 1);
+      KW.msg = `Saved ${label(c)}.`; KW.err = false; render();
+    }
+  };
+
+  views.keys = () => {
+    const head = `<div class="ov">Answer keys</div>`;
+    if (!P.ready) return head + `<h1>Answer keys</h1><div class="card mt"><p class="t2">Checking your sign-in…</p></div>`;
+    if (!P.user) return head + `<h1>Sign in to enter answer keys</h1><div class="card mt"><p class="t2">Only editor accounts can enter answer keys.</p><p><a class="btn pri" href="#profile">Sign in</a></p></div>`;
+    if (P.editor == null) checkEditor();
+    if (P.editor == null || P.editor === 'checking') { return head + `<h1>Answer keys</h1><div class="card mt"><p class="t2">Checking your editor access…</p></div>`; }
+    if (P.editor !== true) return head + `<h1>Editor access needed</h1><div class="card mt"><p class="t2">${P.editor && P.editor.error ? 'Could not check editor access: ' + esc(P.editor.error) + '. Has supabase/schema.sql been run?' :
+      'This account is not an answer-key editor. The site owner can add it in the Supabase SQL Editor with:'}</p>${P.editor && P.editor.error ? '' : `<pre class="kw-sql">insert into public.key_editors (user_id)\nselect id from auth.users where email = '${esc(P.user.email)}';</pre>`}</div>`;
+    if (KW.i == null) { const first = TESTS.findIndex(t => !DBKEYS[t]); KW.i = first >= 0 ? first : 0; KW.letters = (DBKEYS[TESTS[KW.i]] || '').split('').concat(Array(25).fill('')).slice(0, 25); }
+    const c = TESTS[KW.i], done = TESTS.filter(t => DBKEYS[t]).length, st = status(c);
+    const chips = TESTS.map((t, j) => `<button class="btn sm ${j === KW.i ? 'pri' : status(t) === 'saved' ? '' : 'gh'}" onclick="VK.open(${j})" title="${label(t)}: ${status(t) === 'saved' ? 'key saved' : status(t) === 'checked' ? 'has checked answers, no saved key' : 'needs a key'}">${t.slice(0, 4)}${t.slice(4)}${status(t) === 'saved' ? ' ✓' : ''}</button>`).join('');
+    return head + `<h1>${label(c)}</h1>
+      <p class="t2">Test ${KW.i + 1} of ${TESTS.length} · ${done} of ${TESTS.length} tests have a saved key${KW.loadErr ? ' · <span style="color:var(--not)">could not load saved keys: ' + esc(KW.loadErr) + '</span>' : ''}</p>
+      ${KW.msg ? `<div class="ban ${KW.err ? 'bad' : 'ok'}" role="status">${esc(KW.msg)}</div>` : ''}
+      <div class="card mt">
+        <p class="t2">${st === 'saved' ? `A key for this test was saved${KW.meta[c] ? ' on ' + new Date(KW.meta[c]).toLocaleString() : ''}. Change any answer and save to replace it.` :
+          `Enter the official answers for the ${label(c)}, in problem order.`}</p>
+        <label class="pf-l" for="kwQuick">Type or paste all 25 letters</label>
+        <input id="kwQuick" class="pf-i mono" maxlength="60" autocomplete="off" spellcheck="false" placeholder="e.g. DCBECAAABA…" value="${KW.letters.join('')}" oninput="VK.quick(this.value)">
+        <p class="mt"><button class="btn sm gh" onclick="VK.toggleShow()">${KW.show ? 'Hide' : 'Show'} the problems</button> <button class="btn sm gh" onclick="VK.clear()">Clear</button></p>
+        <div id="kwRows" class="kw-rows">${rowsHtml()}</div>
+        <div id="kwSum" class="mt">${summary()}</div>
+        <p class="mt"><button class="btn pri" ${KW.busy ? 'disabled' : ''} onclick="VK.save()">Save and go to next test</button>
+          <button class="btn" onclick="VK.open(${KW.i - 1})">Previous</button> <button class="btn" onclick="VK.open(${KW.i + 1})">Skip</button></p>
+      </div>
+      <div class="card mt"><h3>All tests</h3><p class="t2">✓ = key saved. Choose a test to enter or review its key.</p><div class="kw-all">${chips}</div></div>`;
+  };
+
   const css = document.createElement('style');
   css.textContent = `.side a.pf-nav{margin-top:auto}@media (max-width:900px){.side a.pf-nav{margin-top:0}}
     .pf{max-width:460px}.pf-l{display:block;margin-top:12px;font-size:14px;color:var(--t2)}
     .pf-i{width:100%;font:15px var(--body);padding:10px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--sf);color:var(--ink);margin-top:4px}
     .pf-t{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}.pf-t th{text-align:left;color:var(--t3);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--bd)}
-    .pf-t td{padding:8px;border-bottom:1px solid var(--bd);white-space:nowrap}`;
+    .pf-t td{padding:8px;border-bottom:1px solid var(--bd);white-space:nowrap}
+    .kw-rows{display:grid;gap:6px;margin-top:12px}.kw-r{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd)}
+    .kw-n{width:2.2em;font:600 15px var(--mono);color:var(--t2)}.kw-bs{display:flex;gap:6px}
+    .kw-b{width:40px;height:40px;border-radius:10px;border:1px solid var(--bd);background:var(--sf);color:var(--ink);font:600 15px var(--body);cursor:pointer}
+    .kw-b.on{background:var(--br);border-color:var(--br);color:#fff}.kw-p{flex-basis:100%;font-size:14.5px;color:var(--t2);padding-left:2.9em}
+    .kw-c{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:4px}.kw-cf{display:flex;gap:8px;align-items:center;margin-top:8px}
+    .kw-all{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.kw-sql{background:var(--sub);padding:12px;border-radius:10px;overflow-x:auto;font:13px var(--mono)}`;
   document.head.appendChild(css);
-  if (location.hash === '#profile') go();
+  if (location.hash === '#profile' || location.hash === '#keys') go();
 })();
