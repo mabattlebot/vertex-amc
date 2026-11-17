@@ -52,3 +52,10 @@ Grading uses, in order: keys entered by editors (Supabase `answer_keys` table), 
 ```sql
 insert into public.key_editors (user_id) select id from auth.users where email = 'you@example.com';
 ``` After answering, each problem links to its AoPS wiki solutions page.
+
+## AI requires sign-in
+Every AI feature (tutor chat, feedback on explanations, mistake explanations) needs a signed-in account. Signed-out visitors see a sign-in / create-account prompt in place of the AI; lessons, checks and written solutions still work without an account.
+- Enforced on the server: `/api/ai` only answers requests carrying a valid Supabase access token (`Authorization: Bearer …`). The server checks each token with Supabase (`/auth/v1/user`) and caches valid ones for 60 seconds. Missing, expired or forged tokens get `401`; if Supabase cannot be reached the server answers `503` rather than letting the request through.
+- Server settings (Render → Environment): `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` (both in `render.yaml`). If they are missing, AI requests are refused with `503`.
+- Rate limits apply per signed-in user as well as per address (20 requests per minute).
+- For local development only, `AI_REQUIRE_SIGNIN=false` turns the check off.

@@ -16,3 +16,7 @@ services:
         value: llama-3.3-70b-versatile
       - key: ALLOWED_ORIGINS
         value: https://mabattlebot.github.io   # lets the GitHub Pages copy of the site use this AI backend
+      - key: SUPABASE_URL
+        value: https://qruwzwcxzjhqxdiotyvg.supabase.co   # AI requests must come from a signed-in user of this project
+      - key: SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_X-Dw7_8ZxIRzmmaU2FsJjA_7WAI4WZ4   # public key, used only to check sign-in tokens

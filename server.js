@@ -1,7 +1,7 @@
 // Zero-dependency backend. Keys live ONLY in process.env (never sent to the browser).
 // Gemini is the primary AI provider; Groq is an optional backup used only when Gemini
 // is not configured, or when a Gemini call itself fails (quota, outage, bad key, etc).
-const http=require('http'),fs=require('fs'),path=require('path');
+const http=require('http'),fs=require('fs'),path=require('path'),crypto=require('crypto');
 try{for(const l of fs.readFileSync(path.join(__dirname,'.env'),'utf8').split('\n')){const m=l.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/);if(m&&!l.trim().startsWith('#')&&!(m[1] in process.env))process.env[m[1]]=m[2]}}catch(e){}
 const KEY=process.env.GEMINI_API_KEY,MODEL=process.env.GEMINI_MODEL||'gemini-2.5-flash',BASE=process.env.GEMINI_BASE_URL||'https://generativelanguage.googleapis.com/v1beta',PORT=process.env.PORT||3000;
 const GKEY=process.env.GROQ_API_KEY,GMODEL=process.env.GROQ_MODEL||'llama-3.3-70b-versatile',GBASE=process.env.GROQ_BASE_URL||'https://api.groq.com/openai/v1';
@@ -12,6 +12,18 @@ const hits=new Map();const limited=ip=>{const now=Date.now(),a=(hits.get(ip)||[]
 // Behind a host's proxy (Render) every request arrives from the proxy, so use the address it forwards.
 // The proxy appends the real client address last, so take the last entry (earlier ones can be faked by the client).
 const clientIp=req=>{const x=String(req.headers['x-forwarded-for']||'').split(',').map(s=>s.trim()).filter(Boolean);return x.length?x[x.length-1]:req.socket.remoteAddress};
+// AI requests must come from a signed-in Supabase user. The browser sends the user's access token; the server asks
+// Supabase whether it is valid (so expired, forged or signed-out tokens are refused) and caches the answer briefly.
+// Set AI_REQUIRE_SIGNIN=false only for local development.
+const SB_URL=(process.env.SUPABASE_URL||'').replace(/[/]+$/,''),SB_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||'';
+const AUTH_REQUIRED=process.env.AI_REQUIRE_SIGNIN!=='false',authCache=new Map();
+async function verifyUser(req){
+ const m=/^Bearer[ ]+([A-Za-z0-9._~+/=-]{20,4096})$/.exec(String(req.headers.authorization||''));if(!m)return null;
+ const h=crypto.createHash('sha256').update(m[1]).digest('hex'),c=authCache.get(h);if(c&&c.exp>Date.now())return c.user;
+ const r=await fetch(SB_URL+'/auth/v1/user',{headers:{apikey:SB_KEY,Authorization:'Bearer '+m[1]}});
+ if(!r.ok){if(r.status>=500)throw new Error('Sign-in service unavailable ('+r.status+')');return null}
+ const u=await r.json().catch(()=>null);if(!u||!u.id)return null;
+ if(authCache.size>5000)authCache.clear();authCache.set(h,{user:{id:u.id},exp:Date.now()+60000});return{id:u.id}}
 const send=(res,code,obj)=>{res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(obj))};
 const toContents=input=>(typeof input=='string'?[{role:'user',content:input}]:input).map(t=>({role:t.role=='assistant'?'model':'user',parts:[{text:String(t.content).slice(0,30000)}]}));
 const toMessages=input=>(typeof input=='string'?[{role:'user',content:input}]:input).map(t=>({role:t.role=='assistant'?'assistant':'user',content:String(t.content).slice(0,30000)}));
@@ -56,10 +68,13 @@ async function askAI(input){
  if(GKEY)return await groq(input);
  throw new Error('No AI key is set on the server.')}
 http.createServer(async(req,res)=>{const url=req.url.split('?')[0];
- if(url.startsWith('/api/')){const o=req.headers.origin;if(o&&ORIGINS.includes(o)){res.setHeader('Access-Control-Allow-Origin',o);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type')}
+ if(url.startsWith('/api/')){const o=req.headers.origin;if(o&&ORIGINS.includes(o)){res.setHeader('Access-Control-Allow-Origin',o);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization')}
   if(req.method=='OPTIONS'){res.writeHead(204);return res.end()}}
- if(url=='/api/health')return send(res,200,{ai:!!(KEY||GKEY),provider:KEY?'gemini':(GKEY?'groq':null),backup:!!(KEY&&GKEY),model:KEY?MODEL:(GKEY?groqModel:null)});
- if(url=='/api/ai'&&req.method=='POST'){if(!KEY&&!GKEY)return send(res,503,{error:'Neither GEMINI_API_KEY nor GROQ_API_KEY is set on the server.'});if(limited(clientIp(req)))return send(res,429,{error:'Too many requests'});
+ if(url=='/api/health')return send(res,200,{ai:!!(KEY||GKEY),provider:KEY?'gemini':(GKEY?'groq':null),backup:!!(KEY&&GKEY),model:KEY?MODEL:(GKEY?groqModel:null),auth:AUTH_REQUIRED});
+ if(url=='/api/ai'&&req.method=='POST'){if(!KEY&&!GKEY)return send(res,503,{error:'Neither GEMINI_API_KEY nor GROQ_API_KEY is set on the server.'});if(AUTH_REQUIRED&&(!SB_URL||!SB_KEY))return send(res,503,{error:'AI sign-in is not configured on the server (set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY).'});
+  let who=null;if(AUTH_REQUIRED){try{who=await verifyUser(req)}catch(e){console.error('Auth check failed:',e.message);return send(res,503,{error:'Could not check your sign-in right now. Try again shortly.'})}
+   if(!who)return send(res,401,{error:'Sign in to use the AI tutor.'})}
+  if(limited(clientIp(req))||(who&&limited('user:'+who.id)))return send(res,429,{error:'Too many requests'});
   let body='';for await(const c of req){body+=c;if(body.length>200000)return send(res,413,{error:'Too large'})}
   try{const{input}=JSON.parse(body);if(!input)throw new Error('Missing input');return send(res,200,{text:await askAI(input)})}catch(e){return send(res,500,{error:String(e.message||e)})}}
  let f=url=='/'?'/index.html':url;const root=f.startsWith('/data/')?DATA:PUB;const file=path.normalize(path.join(root,f.startsWith('/data/')?f.slice(6):f));
