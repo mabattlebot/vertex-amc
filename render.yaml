@@ -20,3 +20,5 @@ services:
         value: https://qruwzwcxzjhqxdiotyvg.supabase.co   # AI requests must come from a signed-in user of this project
       - key: SUPABASE_PUBLISHABLE_KEY
         value: sb_publishable_X-Dw7_8ZxIRzmmaU2FsJjA_7WAI4WZ4   # public key, used only to check sign-in tokens
+      - key: SUPABASE_SECRET_KEY
+        sync: false        # secret; lets the server save generated lessons in the lessons table so each is written only once
