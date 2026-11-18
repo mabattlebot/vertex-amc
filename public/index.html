@@ -2894,6 +2894,67 @@ const SP=[
 /*__END_SP__*/];
 /* Recognition drill: one fresh problem per shortcut. Referenced by name, so the pool
    survives any reordering of SP. Each run samples a handful (see drStart in app.js). */
+/* Real AMC 10 problems where each shortcut is the key step, chosen by hand from the library (easiest first at runtime).
+   Shortcuts with an empty list have no clean real-problem match in this library yet; they keep the made-up practice. */
+const SPREAL={
+'Percent chain':['2007A1','2018A2','2011A8'],
+'Ratio into parts':['2016A5','2007A14','2019B11'],
+'Average speed':['2003A4','2007B3','2008A6'],
+'Fraction of what is left':['2005B3','2014A3','2011B6'],
+'Clock hands':[],
+'Base conversion':['2019B12','2015A18','2013A19'],
+'Cancel factorials':['2016A1','2019B6','2013B20'],
+'Unit conversion chain':['2012A1','2011A1','2020A4'],
+'Do not solve for x':['2006B14','2020A14'],
+'Pair up a long sum':['2003A1','2011A4','2020A8'],
+"Vieta's formulas":['2002A10','2003A18','2002A14'],
+'Difference of squares':['2008A7','2018A10','2005B24'],
+'Infinite geometric sum':['2016B16'],
+'Telescoping':['2008A5'],
+'Combine logarithms':[],
+'Absolute value as distance':['2004A4','2020A5','2010B13'],
+'Vertex of a quadratic':['2006A8','2019A19'],
+'One binomial term':[],
+'Made-up operation':['2007B2','2004A2','2011B15'],
+'Add the equations':['2015A16','2002B20'],
+'Cycles':['2016B8','2017A13','2009B21'],
+'Digit sum test':['2019B14'],
+'Count the divisors':['2020A15','2019A11','2016A22'],
+'GCD times LCM':['2018B23'],
+'Trailing zeros':['2019A2','2006B11','2015B23'],
+'Reduce before you multiply':['2017B14','2018B16','2017B23'],
+'Squares in a range':['2020B7','2002A22'],
+'Factor the whole equation':['2012B10','2002B13','2007A23'],
+'Area two ways':['2002A13','2014A9','2013A15'],
+'Shoelace formula':['2013A16','2013A18'],
+'Areas scale by the square':['2005B7','2006B15','2018A9'],
+'Spot the triple':['2018A13','2008B15'],
+"Heron's formula":['2010B7'],
+'Sector as a fraction':['2002A7','2014A12','2020B10'],
+'Box diagonal':['2008A21'],
+'Polygon angles':['2007B7'],
+'Power of a point':[],
+'Third side range':['2006B10','2017A10'],
+'Inradius':['2019A21'],
+'Overlap counting':['2003A15','2005B13','2017B13'],
+'Count the opposite':['2004B2','2018B5','2013A7'],
+'Handshakes':['2017A8','2012B15'],
+'Count a range':['2005A13','2014B20'],
+'Repeated letters':['2020B5','2019A17'],
+'Stars and bars':['2016A20'],
+'Grid paths':[],
+'Means are totals':['2020A2','2005A6','2015A5'],
+'At least one':[],
+'Two-dice sums':['2005B9','2012A9','2004B11'],
+'Probability as area':['2011B13','2017A15','2018B22'],
+'Expected value':['2015B18','2007B22'],
+'Magic square':['2020A7'],
+'Cryptarithm':['2016B6','2014B10'],
+'Work backwards':['2016A8','2011B6'],
+'Push to the extreme':['2004B5','2008B4','2013B5'],
+'Pair by symmetry':['2019B17'],
+'Equal is best':['2016B17'],
+};
 const DRLQ=[
 [R`A $\$80$ jacket is marked up $25\%$, then put on sale at $20\%$ off. What is the final price?`,'Percent chain'],
 [R`A $72$-acre farm is planted with corn and wheat in the ratio $5:4$. How many acres of wheat?`,'Ratio into parts'],
@@ -3395,15 +3456,36 @@ function library(){const nk=needKey();return `<div class="ov">Library</div><h1>A
  <div class="card mt"><h3>Source and attribution</h3><p class="t2">Every problem here is an actual AMC problem from the contest screenshots supplied for this class, with its original number and wording. Nothing is AI-generated. The MAA owns all AMC problems; for questions about reuse beyond your classroom, write to amcinfo@maa.org.</p></div>`}
 /* ---------- Speed lessons ---------- */
 let SL={i:0};
-function slOpen(i){SL={i,g:SP[i].gen(),si:0,tries:0,done:[],phase:'guided'};render()}
+function slOpen(i){SL={i,g:SP[i].gen(),si:0,tries:0,done:[],phase:'guided',nSolo:0};render()}
 function slCheck(){const st=SL.g.steps[SL.si],v=num(($('#slin')||{}).value);if(isNaN(v))return;if(Math.abs(v-st.ans)<1e-6){SL.done.push({ok:true});SL.si++;SL.tries=0;SL.msg=''}else if(++SL.tries>=2){SL.done.push({ok:false});SL.si++;SL.tries=0;SL.msg=''}else SL.msg='Not yet. Read the question once more and try again.';
  if(SL.si>=SL.g.steps.length)SL.phase='guided-done';render()}
 function slSolo(){SL.solo=SP[SL.i].gen();SL.phase='solo';SL.t0=Date.now();SL.res=null;render()}
-function slSoloCheck(){const v=num(($('#slsolo')||{}).value);if(isNaN(v))return;const el=(Date.now()-SL.t0)/1000,ok=Math.abs(v-SL.solo.ans)<1e-6;SL.res={ok,el};if(ok){S.speed[SL.i]=Math.min(S.speed[SL.i]||1e9,Math.round(el));save()}render()}
+function slSoloCheck(){const v=num(($('#slsolo')||{}).value);if(isNaN(v))return;const el=(Date.now()-SL.t0)/1000,ok=Math.abs(v-SL.solo.ans)<1e-6;SL.res={ok,el};SL.nSolo=(SL.nSolo||0)+1;if(ok){S.speed[SL.i]=Math.min(S.speed[SL.i]||1e9,Math.round(el));save()}render()}
+/* ---------- guided shortcuts: after a couple of warm-ups, real AMC 10 problems that need the shortcut ---------- */
+const SL_WARMUPS=2; // timed made-up questions before moving to real problems
+const realOf=i=>(SPREAL[SP[i].n]||[]).map(byId).filter(Boolean).sort((a,b)=>a.d-b.d||a.year-b.year||a.number-b.number);
+function slReal(k){const R=realOf(SL.i);if(!R.length)return;SL.phase='real';SL.ri=Math.max(0,Math.min(k||0,R.length-1));SL.rsel=null;SL.rres=null;SL.rt0=Date.now();render();const c=document.getElementById('slcard');if(c)c.scrollIntoView({block:'start'})}
+function slRealPick(j){if(SL.rres)return;SL.rsel=j;render()}
+function slRealCheck(){if(SL.rres||SL.rsel==null)return;const p=realOf(SL.i)[SL.ri],el=(Date.now()-SL.rt0)/1000,ans=ansOf(p),ok=ans!=null&&SL.rsel===ans;
+ if(ans==null)S.seen[p.id]=S.seen[p.id]||3;else{record(p.topic,ok,el,p.d);S.seen[p.id]=ok?1:2;if(ok)S.speed[SL.i]=Math.min(S.speed[SL.i]||1e9,Math.round(el))}
+ if(window.onVertexAttempt)onVertexAttempt({problem_id:p.id,choice:L5[SL.rsel],correct:ans==null?null:ok,seconds:Math.round(el)});
+ SL.rres={ok,el,ans};save();render()}
+function soloNext(){const R=realOf(SL.i),next=SL.i<SP.length-1?`<button class="btn gh" onclick="slOpen(${SL.i+1});window.scrollTo(0,0)">Next shortcut</button>`:'';
+ if(!R.length)return `<div class="row mt"><button class="btn pri" onclick="slSolo()">Another one</button><button class="btn" onclick="slOpen(${SL.i})">Guided steps again</button>${next}</div><p class="t2 mt2">No real AMC 10 problem in this library is a clean fit for this shortcut yet, so practice uses new numbers.</p>`;
+ if((SL.nSolo||0)>=SL_WARMUPS)return `<div class="row mt"><button class="btn pri" onclick="slReal(0)">On to real AMC 10 problems (${R.length})</button><button class="btn gh" onclick="slSolo()">One more warm-up</button></div>`;
+ return `<div class="row mt"><button class="btn pri" onclick="slSolo()">Next warm-up (${(SL.nSolo||0)+1} of ${SL_WARMUPS})</button><button class="btn gh" onclick="slReal(0)">Skip to real AMC 10 problems</button></div>`}
+function realHTML(){const R=realOf(SL.i),p=R[SL.ri],sp=SP[SL.i],r=SL.rres,last=SL.ri>=R.length-1;
+ const chs=`<div class="chs${p.text&&p.choices.some(c=>c.length>32)?' long':''}${p.text?'':' let'}" role="group" aria-label="Answer choices">${L5.split('').map((l,i)=>{const cls=r?(r.ans!=null&&i==r.ans?'ok':i==SL.rsel?(r.ans==null?'sel':'bad'):''):(i==SL.rsel?'sel':'');return `<button class="ch ${cls}" ${r?'disabled':''} onclick="slRealPick(${i})" aria-label="Choice ${l}"><b>${l}</b>${p.text?`<span>${M(p.choices[i])}</span>`:''}</button>`}).join('')}</div>`;
+ const res=!r?`<div class="row mt"><button class="btn pri" ${SL.rsel==null?'disabled':''} onclick="slRealCheck()">Check answer</button><span class="mono">Aim to spot the shortcut in the first 20 seconds</span></div>`:
+  (r.ans==null?`<div class="ban note"><b>Recorded: (${L5[SL.rsel]}).</b> The answer key for the ${p.year} ${p.contest} has not been entered yet, so this one cannot be graded. Compare with the AoPS solutions.`:`<div class="ban ${r.ok?'ok':'bad'}"><b>${r.ok?'Correct in '+mmss(r.el)+'.':'Not quite. The answer is ('+L5[r.ans]+')'+(p.text?' '+M(p.choices[r.ans]):'')+'.'}</b> ${r.ok?(r.el<=180?'That is contest pace.':'Right answer. Next time, look for the shortcut sooner.'):`Look for where <b>${sp.n.toLowerCase()}</b> cuts the work, then check the solutions.`}`)+
+  `<div class="mt2">${aopsLink(p)}</div></div><div class="row mt">${last?`<span class="chip o">All ${R.length} real problems for this shortcut done</span>`:`<button class="btn pri" onclick="slReal(${SL.ri+1})">Next real problem (${SL.ri+2} of ${R.length})</button>`}${last&&SL.i<SP.length-1?`<button class="btn pri" onclick="slOpen(${SL.i+1});window.scrollTo(0,0)">Next shortcut</button>`:''}<button class="btn gh" onclick="slOpen(${SL.i})">Guided steps again</button></div>`;
+ return `<div class="ov">Real AMC 10 problem ${SL.ri+1} of ${R.length}</div><div class="cite mt2"><b>${cite(p)}</b><span class="chip">${p.topic}</span><span class="chip w">Difficulty ${p.d} of 5</span></div>
+ <div class="ban info"><b>Use: ${sp.n}.</b> How to spot it: ${M(sp.cue)}</div>
+ ${p.text?`<div class="ptext">${M(p.text)}</div>${FIG[p.id]?`<div class="fig"><img src="${FIG[p.id]}" alt="Diagram for ${cite(p)}"></div>`:''}`:shot(p)}${chs}${res}`}
 function guided(){if(!SL.g)SL={i:SL.i||0,g:SP[SL.i||0].gen(),si:0,tries:0,done:[],phase:'guided'};const p=SP[SL.i],g=SL.g;
  let prac='';
- if(SL.phase=='solo'){const r=SL.res;prac=`<div class="ov">Now alone, on the clock</div><p class="ptext">${M(SL.solo.q)}</p>${r?`<div class="ban ${r.ok?'ok':'bad'}"><b>${r.ok?'Correct in '+mmss(r.el)+'.':'Not quite. The answer is '+SL.solo.ans+'.'}</b> ${r.ok?(r.el<=60?'That is contest speed.':'Right answer. Try another and aim for under 1:00.'):'Walk through it with the steps again, then retry.'}</div><div class="row mt"><button class="btn pri" onclick="slSolo()">Another one</button><button class="btn" onclick="slOpen(${SL.i})">Guided steps again</button>${SL.i<SP.length-1?`<button class="btn gh" onclick="slOpen(${SL.i+1});window.scrollTo(0,0)">Next shortcut</button>`:''}</div>`:`<div class="row mt2"><input type="text" inputmode="decimal" id="slsolo" style="max-width:200px" aria-label="Your answer" onkeydown="if(event.key=='Enter')slSoloCheck()"><button class="btn pri" onclick="slSoloCheck()">Check</button><span class="mono">Goal: under 1:00</span></div>`}`}
- else{prac=`<div class="ov">Do it with me</div><p class="ptext">${M(g.q)}</p><div class="steps">${g.steps.slice(0,SL.si).map((st,i)=>`<div class="step"><div>${M(st.ask)}</div><div class="why"><b>${SL.done[i].ok?'✓ Right.':'Answer:'}</b> ${M(st.why)}</div></div>`).join('')}</div>${SL.phase=='guided-done'?`<div class="ban ok"><b>That is the whole method.</b> ${g.steps.length} small steps, no heavy arithmetic.</div><p class="mt"><button class="btn pri" onclick="slSolo()">Try one alone, timed</button> <button class="btn" onclick="slOpen(${SL.i})">Guided again with new numbers</button></p>`:`<div class="step mt2"><div><b>Step ${SL.si+1} of ${g.steps.length}.</b> ${M(g.steps[SL.si].ask)}</div><div class="row mt2"><input type="text" inputmode="decimal" id="slin" style="max-width:200px" aria-label="Your answer" onkeydown="if(event.key=='Enter')slCheck()"><button class="btn pri" onclick="slCheck()">Check</button></div>${SL.msg?`<p class="t2">${SL.msg}</p>`:''}</div>`}`}
+ if(SL.phase=='real')prac=realHTML();else if(SL.phase=='solo'){const r=SL.res;prac=`<div class="ov">${realOf(SL.i).length?`Warm-up ${Math.min((SL.nSolo||0)+(SL.res?0:1),SL_WARMUPS)} of ${SL_WARMUPS}, on the clock · then real AMC 10 problems`:'Now alone, on the clock'}</div><p class="ptext">${M(SL.solo.q)}</p>${r?`<div class="ban ${r.ok?'ok':'bad'}"><b>${r.ok?'Correct in '+mmss(r.el)+'.':'Not quite. The answer is '+SL.solo.ans+'.'}</b> ${r.ok?(r.el<=60?'That is contest speed.':'Right answer. Try another and aim for under 1:00.'):'Walk through it with the steps again, then retry.'}</div>${soloNext()}`:`<div class="row mt2"><input type="text" inputmode="decimal" id="slsolo" style="max-width:200px" aria-label="Your answer" onkeydown="if(event.key=='Enter')slSoloCheck()"><button class="btn pri" onclick="slSoloCheck()">Check</button><span class="mono">Goal: under 1:00</span></div>`}`}
+ else{prac=`<div class="ov">Do it with me</div><p class="ptext">${M(g.q)}</p><div class="steps">${g.steps.slice(0,SL.si).map((st,i)=>`<div class="step"><div>${M(st.ask)}</div><div class="why"><b>${SL.done[i].ok?'✓ Right.':'Answer:'}</b> ${M(st.why)}</div></div>`).join('')}</div>${SL.phase=='guided-done'?`<div class="ban ok"><b>That is the whole method.</b> ${g.steps.length} small steps, no heavy arithmetic.</div><p class="mt"><button class="btn pri" onclick="slSolo()">Try one alone, timed</button> <button class="btn" onclick="slOpen(${SL.i})">Guided again with new numbers</button>${realOf(SL.i).length?` <button class="btn gh" onclick="slReal(0)">Skip to real AMC 10 problems</button>`:''}</p>`:`<div class="step mt2"><div><b>Step ${SL.si+1} of ${g.steps.length}.</b> ${M(g.steps[SL.si].ask)}</div><div class="row mt2"><input type="text" inputmode="decimal" id="slin" style="max-width:200px" aria-label="Your answer" onkeydown="if(event.key=='Enter')slCheck()"><button class="btn pri" onclick="slCheck()">Check</button></div>${SL.msg?`<p class="t2">${SL.msg}</p>`:''}</div>`}`}
  const d=SL.dr;
  const cats=[...new Set(SP.map(x=>x.c))],nd=Object.keys(S.speed).length;
  return `<p class="mono mt">${nd} of ${SP.length} shortcuts practiced, across ${cats.length} areas.</p>
@@ -3412,7 +3494,7 @@ function guided(){if(!SL.g)SL={i:SL.i||0,g:SP[SL.i||0].gen(),si:0,tries:0,done:[
  <div class="ban note"><div class="ov">Example</div><p class="ptext" style="margin-top:6px">${M(p.q)}</p></div>
  <div class="g two mt"><div class="card slow"><div class="row"><h3>The slow way</h3><span class="sp"></span><span class="chip r">${p.slowT}</span></div><ol>${p.slow.map(x=>`<li>${M(x)}</li>`).join('')}</ol></div><div class="card fast"><div class="row"><h3>The fast way</h3><span class="sp"></span><span class="chip o">${p.fastT}</span></div><ol>${p.fast.map(x=>`<li>${M(x)}</li>`).join('')}</ol></div></div>
  <div class="ban info"><b>How to spot it:</b> ${M(p.cue)}</div></div>
- <div class="card mt2">${prac}</div>`}
+ <div class="card mt2" id="slcard">${prac}</div>`}
 function drillView(){const d=SL.dr;return `<div class="card mt"><h2>Recognition drill</h2>${!d?`<p class="t2">After the lessons: ${DRN} new problems, drawn at random from all ${DRL.length} shortcuts. Do not solve them. Just pick which shortcut fits, as fast as you can.</p><button class="btn pri" onclick="drStart()">Start the drill</button>`:d.i>=d.q.length?`<p class="big">${d.s} of ${d.q.length}</p><p class="t2">Average ${mmss(d.t/d.q.length)} per problem. ${d.s>=Math.ceil(d.q.length*.75)?'You are recognizing types quickly.':'Revisit the lessons you missed, then try again.'}</p><button class="btn pri" onclick="drStart()">Try again</button>`:`<div class="mono">Problem ${d.i+1} of ${d.q.length}</div><p class="ptext">${M(DRL[d.q[d.i]][0])}</p><div class="row mt2">${d.o.map(k=>`<button class="btn" onclick="drAns(${k})">${SP[k].n}</button>`).join('')}</div>${d.fb?`<p class="ban ${d.fb[0]?'ok':'bad'}">${d.fb[1]}</p>`:''}`}</div>`}
 let SV={tab:'topics',cat:'',lvl:'',q:''};
 const REL={'Complex numbers':'Quadratics and factoring','Trigonometry and the law of cosines':'Pythagorean theorem and special right triangles','Chinese remainder theorem and repeating conditions':'Modular arithmetic and remainders',"Ptolemy's theorem":'Inscribed angles and cyclic quadrilaterals','Expected value':'Basic probability','Logarithms':'Exponents and radicals','Pigeonhole principle':'Optimization: largest and smallest','Power of a point':'Circles: radius, chords, tangents','Telescoping sums and products':'Arithmetic sequences and series','Systems of equations':'Linear equations and word problems','Absolute value and inequalities':'Quadratics and factoring','Generating functions and sums of dice':'Dice, coins and cards','Geometric probability':'Basic probability','Counting divisors':'Primes and divisibility rules'};
@@ -3427,7 +3509,7 @@ function topicList(){const q=SV.q.toLowerCase();let h='',shown=0;TOP.cats.forEac
 function topUp(){const e=$('#tlist');if(e)e.innerHTML=topicList()}
 function lessons(){const tabs=[['topics','Topic library'],['guided','Guided shortcuts'],['drill','Recognition drill']];
  return `<div class="ov">Speed</div><h1>Solve faster by choosing the short route</h1>
- <div class="card mt"><h2>Why speed is a skill you can learn</h2><p>The AMC gives you 75 minutes for 25 problems: 3 minutes each. Fast students are not quicker at arithmetic. They <b>recognize the type of problem</b> in the first 20 seconds and take a route that needs almost no arithmetic. Each lesson below shows one such route: the slow way most people try, the fast way, how to spot when it applies, and then practice until it is automatic.</p>
+ <div class="card mt"><h2>Why speed is a skill you can learn</h2><p>The AMC gives you 75 minutes for 25 problems: 3 minutes each. Fast students are not quicker at arithmetic. They <b>recognize the type of problem</b> in the first 20 seconds and take a route that needs almost no arithmetic. Each lesson below shows one such route: the slow way most people try, the fast way, how to spot when it applies, then two quick warm-ups, then real AMC 10 problems where that shortcut is the key step.</p>
  <div class="g g3 mt2"><div><span class="chip b">First 20 seconds</span><h3 class="mt2">1. Name it</h3><p class="t2">What is given? What is asked? Which shortcut does that match?</p></div><div><span class="chip b">Next 20 seconds</span><h3 class="mt2">2. Plan it</h3><p class="t2">Say the steps before computing. If your plan needs heavy arithmetic, look for another.</p></div><div><span class="chip b">Then</span><h3 class="mt2">3. Do it</h3><p class="t2">Carry out the plan. No plan after 2 minutes? Skip and come back.</p></div></div></div>
 <div class="tabs mt">${tabs.map(([k,n])=>`<button class="${SV.tab==k?'on':''}" onclick="SV.tab='${k}';render()">${n}</button>`).join('')}</div>
  ${SV.tab=='guided'?guided():SV.tab=='drill'?drillView():`<div class="row mt"><input type="text" id="tq" placeholder="Search topics, for example Vieta or remainder" style="max-width:340px" value="${esc(SV.q)}" oninput="SV.q=this.value;topUp()" aria-label="Search topics">${selHTML('SV','cat','Category',[['','All categories'],...TOP.cats.map(c=>[c,c])],'topUp()')}${selHTML('SV','lvl','Level',[['','All levels'],[1,'Level 1 · basics'],[2,'Level 2'],[3,'Level 3 · mid-contest'],[4,'Level 4'],[5,'Level 5 · hardest']],'topUp()')}</div><p class="t2 mt2">Each topic gives the fast move, then real AMC 10 problems on it from easy to hard. Problems were matched to topics by their wording, so an occasional mismatch is possible.</p><div id="tlist">${topicList()}</div>`}`}
