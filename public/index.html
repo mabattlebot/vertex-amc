@@ -52,6 +52,7 @@ textarea,input[type=text],select{width:100%;font:inherit;color:var(--ink);backgr
 .pl-bubble.ht{background:var(--wns);color:var(--wnt);border-radius:14px}
 .pl-bubble.rv{background:var(--oks);color:var(--okt);border-radius:14px}
 .pl-input-row{display:flex;gap:8px;align-items:flex-end}.pl-input-row textarea{min-height:52px;flex:1;resize:none}
+.pl-tools{display:grid;gap:10px;margin-top:8px}.pl-tool{border:1px solid var(--bd);border-radius:12px;padding:12px 14px;background:var(--sub)}.pl-tool .ptext{margin-top:4px}.pl-sol li{margin:8px 0}
 .pl-stage{border-bottom:1px solid var(--bd);padding-bottom:16px;margin-bottom:16px}
 .typing{display:flex;gap:5px;align-items:center;padding:4px 0}.typing i{width:7px;height:7px;border-radius:50%;background:var(--t3);display:block;animation:blink 1.2s ease-in-out infinite}.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
 .tutor-thinking{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;gap:14px}
@@ -3061,7 +3062,7 @@ const serverAI=async input=>{const t=window.vertexToken?await vertexToken():null
  if(r.status==401)throw{code:'signin',message:j.error};if(!r.ok)throw{code:r.status==429?'rate_limited':'error',message:j.error};return{text:j.text}};
 const aiNeedsSignIn=()=>!!(AISRV&&AISRV.ai&&AISRV.auth&&!window.vertexSignedIn);
 function aiRefresh(){if(AISRV&&AISRV.ai){if(aiNeedsSignIn()){AI=null;AIname=''}else{AI=serverAI;AIname=AISRV.provider=='groq'?'Groq':'Gemini'}}}
-window.onVertexAuth=()=>{aiRefresh();const ae=document.activeElement;if(!(ae&&/TEXTAREA|INPUT/.test(ae.tagName)))render()};
+window.onVertexAuth=()=>{aiRefresh();if(route=='probLesson'&&PL&&PL.needSignIn&&!aiNeedsSignIn())return openProbLesson(PL.p.id);const ae=document.activeElement;if(!(ae&&/TEXTAREA|INPUT/.test(ae.tagName)))render()};
 function aiSignIn(m){window.vertexReturn=route;location.hash='profile';if(window.VX)VX.mode(m)}
 const aiGate=small=>small?`<p class="t2 mt2"><a href="#profile" onclick="event.preventDefault();aiSignIn('signin')">Sign in</a> or <a href="#profile" onclick="event.preventDefault();aiSignIn('signup')">create a free account</a> to get feedback from the AI tutor.</p>`:
  `<div class="ban info"><b>Sign in to use the AI tutor.</b><p>The AI tutor is available to signed-in users. Your progress is saved to your account too. Lessons, checks and solutions work without an account.</p><div class="row"><button class="btn sm pri" onclick="aiSignIn('signin')">Sign in</button><button class="btn sm" onclick="aiSignIn('signup')">Create account</button></div></div>`;
@@ -3182,6 +3183,29 @@ function similarProblems(p,n){
  if(out.length<n)add(ALL.filter(x=>eligible(x)&&x.topic===p.topic)
    .sort((a,b)=>Math.abs(a.d-p.d)-Math.abs(b.d-p.d)||a.number-b.number));
  return out}
+/* ---------- lessons: hand-written first (lessons/<test>.json), then a saved AI lesson ----------
+   A lesson is only used if its answer matches the answer key, so a wrong lesson is never shown. */
+const LESSONFILE={},lsKey=id=>'vertex-lesson:'+id;
+const lessonFile=c=>LESSONFILE[c]||(LESSONFILE[c]=fetch('lessons/'+c+'.json').then(r=>r.ok?r.json():{}).catch(()=>{delete LESSONFILE[c];return{}}));
+async function findLesson(p){
+ const a=ansOf(p),letter=a!=null?L5[a]:null,ok=L=>!!L&&L.v===2&&Array.isArray(L.steps)&&(!letter||L.answer===letter);
+ const hand=(await lessonFile(ckey(p)))[p.id];
+ if(hand){if(ok(hand))return Object.assign({src:'curated'},hand);console.warn('Hand-written lesson for '+p.id+' does not match the answer key, so it is not used.')}
+ try{const c=JSON.parse(localStorage.getItem(lsKey(p.id))||'null');if(ok(c))return c}catch(e){}
+ if(!(AISRV&&AISRV.ai))return null;
+ if(aiNeedsSignIn())return{needSignIn:true};
+ const t=window.vertexToken?await vertexToken():null;if(!t&&AISRV.auth)return{needSignIn:true};
+ const r=await fetch(API+'/api/lesson',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},t?{Authorization:'Bearer '+t}:{}),body:JSON.stringify({id:p.id})});
+ const j=await r.json().catch(()=>({}));
+ if(r.status==401)return{needSignIn:true};
+ if(!r.ok)throw new Error(j.error||('Lesson error '+r.status));
+ if(!ok(j.lesson))throw new Error('The saved lesson does not match the answer key.');
+ try{localStorage.setItem(lsKey(p.id),JSON.stringify(j.lesson))}catch(e){}
+ return j.lesson}
+// Formulas and short options may be written without $...$; typeset them when they look like math, leave sentences alone.
+const MX=v=>{v=String(v||'');return M(v.includes('$')?v:/\\|\^|_|^[-\d\s.,+=()\/]+$/.test(v)?'$'+v+'$':v)};
+function useLesson(L){PL.L=L;PL.conceptText=L.goal;PL.bridge=L.bridge||'';
+ PL.steps=L.steps.map(st=>st.check?{title:st.title,explain:st.explain,q:st.check.q,opts:st.check.opts,ans:st.check.ans,why:st.check.why,ok:true}:{title:st.title,explain:st.explain,noCheck:true,ok:true})}
 function openProbLesson(id){
  const p=byId(id);if(!p)return;
  const sim=similarProblems(p,5);
@@ -3190,8 +3214,13 @@ function openProbLesson(id){
      mainSel:null,mainChecked:false};
  route='probLesson';render();window.scrollTo(0,0);
  setCoach('problLesson');setCoachCtx();
- if(AI)genProbLesson(p).then(()=>{if(route=='probLesson'&&PL.p===p)render()});
- else{PL.loading=false;PL.phase='concept';render()}}
+ const done=()=>{if(route=='probLesson'&&PL.p===p){PL.loading=false;if(PL.phase=='loading')PL.phase='concept';render()}};
+ findLesson(p).then(L=>{if(PL.p!==p)return;
+  if(L&&L.needSignIn){PL.needSignIn=true;PL.steps=[];PL.conceptText=''}
+  else if(L)useLesson(L);
+  else if(AI)return genProbLesson(p); // inside claude.ai: written live by the viewer's own Claude
+  else{PL.steps=[];PL.conceptText='No lesson is available for this problem here yet. Read it carefully and try it yourself below.'}
+ }).catch(e=>{console.warn('Lesson:',e);if(PL.p!==p)return;PL.steps=[];PL.conceptText='The lesson could not be loaded just now ('+esc(e.message||String(e))+'). You can still try the problem.'}).then(done)}
 
 /* One AI call writes the whole lesson up front — a concept intro, then three taught steps
    (explanation + a short check question of its own, with a known correct option), then a
@@ -3269,6 +3298,10 @@ function plStepsStart(){
  PL.phase=PL.steps.length?'steps':'solve';PL.si=0;PL.sel=null;PL.checked=false;PL.tries=0;PL.gaveUp=false;
  render();window.scrollTo(0,0)}
 function plPickStep(i){if(PL.checked)return;PL.sel=i;document.querySelectorAll('.ch').forEach(b=>b.classList.toggle('sel',+b.dataset.i===i));const s=$('#stepsub');if(s)s.disabled=false}
+function plLessonEnd(L){return `<h2 class="mt">The full solution, and why it works</h2><ol class="pl-sol">${L.solution.map(x=>`<li>${M(x)}</li>`).join('')}</ol>
+ ${L.shortcut?`<div class="ban info mt2"><div class="ov">Faster route</div><p class="ptext mt2">${M(L.shortcut)}</p></div>`:''}
+ ${L.traps&&L.traps.length?`<div class="ban bad mt2"><div class="ov">Common traps</div><ul>${L.traps.map(x=>`<li>${M(x)}</li>`).join('')}</ul></div>`:''}
+ <div class="ban ok mt2"><div class="ov">Recognize it next time</div><p class="ptext mt2">${M(L.recognize)}</p></div>`}
 function plCheckStep(){if(PL.sel==null||PL.checked)return;PL.checked=true;render()}
 function plStepRetry(){PL.tries++;PL.sel=null;PL.checked=false;render()}
 function plStepReveal(){PL.gaveUp=true;render()}
@@ -3296,11 +3329,21 @@ function probLessonHTML(){
 
  // Phase: concept — the overall idea, the problem itself, then "begin the lesson"
  if(PL.phase==='concept'){
-  left+=`<div class="pl-stage"><span class="chip b">Step 0 · The big idea</span>
+  const L=PL.L,prob=p.text?`<div class="ptext mt2">${M(p.text)}</div>`+(FIG[p.id]?`<div class="fig"><img src="${FIG[p.id]}" alt="Diagram"></div>`:''):shot(p);
+  if(PL.needSignIn)left+=`<div class="pl-stage"><h2>Sign in for the full lesson</h2>${aiGate()}</div><div class="ban note mt2"><div class="ov">The problem</div>${prob}</div>
+   <div class="row mt"><button class="btn pri" onclick="plStepsStart()">Try the problem</button><button class="btn gh" onclick="closeProbLesson()">Back</button></div>`;
+  else if(L)left+=`<div class="pl-stage"><span class="chip b">${L.src=='curated'?'Hand-written lesson':'Saved lesson'}</span>
+   <h2 class="mt2">What the problem is really asking</h2><div class="ptext mt2">${M(L.goal)}</div></div>
+   <div class="ban note mt2"><div class="ov">The problem</div>${prob}</div>
+   <h2 class="mt">Your toolkit</h2><p class="t2">Everything this problem uses, and why each one works.</p>
+   <div class="pl-tools">${L.tools.map(t=>`<div class="pl-tool"><b>${MX(t.name)}</b><div class="ptext">${MX(t.fact)}</div>${t.why?`<p class="t2">${M(t.why)}</p>`:''}</div>`).join('')}</div>
+   <h2 class="mt">How to find a way in</h2><div class="ptext mt2">${M(L.approach)}</div>
+   <p class="t2 mt2">Next: ${PL.steps.length} steps. Each one teaches a piece of the solution and why it works${PL.steps.some(x=>!x.noCheck)?', with a quick check':''}. Then you solve the problem yourself.</p>
+   <div class="row mt"><button class="btn pri" onclick="plStepsStart()">Start the lesson</button><button class="btn gh" onclick="closeProbLesson()">Back</button></div>`;
+  else left+=`<div class="pl-stage"><span class="chip b">Step 0 · The big idea</span>
   <h2 class="mt2">The key idea in this problem</h2>
   <div class="ptext mt2">${M(PL.conceptText)}</div></div>
-  <div class="ban note mt2"><div class="ov">The problem</div>
-  ${p.text?`<div class="ptext mt2">${M(p.text)}</div>`+(FIG[p.id]?`<div class="fig"><img src="${FIG[p.id]}" alt="Diagram"></div>`:''):shot(p)}</div>
+  <div class="ban note mt2"><div class="ov">The problem</div>${prob}</div>
   <p class="t2 mt2">${PL.steps.length?`This lesson walks through ${PL.steps.length} steps. Each one teaches a piece of the idea, then checks you understand it before moving on — once you have all ${PL.steps.length}, you solve the problem yourself.`:'Read the problem carefully, then try it yourself below.'}</p>
   <div class="row mt"><button class="btn pri" onclick="plStepsStart()">${PL.steps.length?'Start the lesson':'Try the problem'}</button>
   <button class="btn gh" onclick="closeProbLesson()">Back</button></div>`}
@@ -3309,15 +3352,17 @@ function probLessonHTML(){
  else if(PL.phase==='steps'){
   const step=PL.steps[d],total=PL.steps.length;
   left+=`<div class="pl-progress">${Array.from({length:total},(_,i)=>`<div class="pl-dot ${i<d?'done':i===d?'active':''}"></div>`).join('')}</div>
-  <span class="chip b">Step ${d+1} of ${total}</span>
-  <div class="ptext mt2">${M(step.explain)}</div>
-  <div class="ban info mt2"><div class="ov">Check your understanding</div><p class="ptext mt2">${M(step.q)}</p>
-  <div class="chs two" role="group">${step.opts.map((o,i)=>{const show=PL.checked&&(PL.sel===step.ans||PL.gaveUp);return `<button class="ch ${PL.checked?(show&&i===step.ans?'ok':i===PL.sel?(i===step.ans?'ok':'bad'):''):(i===PL.sel?'sel':'')}" ${PL.checked?'disabled':''} data-i="${i}" onclick="plPickStep(${i})"><b>${i+1}</b><span>${M(o)}</span></button>`}).join('')}</div>`;
+  <span class="chip b">Step ${d+1} of ${total}</span>${step.title?`<h2 class="mt2">${M(step.title)}</h2>`:''}
+  <div class="ptext mt2">${M(step.explain)}</div>${step.noCheck?`<p class="mt2"><button class="btn pri" onclick="plStepNext()">${d<total-1?'Continue to step '+(d+2):'Continue to the problem'}</button></p>`:''}
+  ${step.noCheck?'':`<div class="ban info mt2"><div class="ov">Check your understanding</div><p class="ptext mt2">${M(step.q)}</p>
+  <div class="chs two" role="group">${step.opts.map((o,i)=>{const show=PL.checked&&(PL.sel===step.ans||PL.gaveUp);return `<button class="ch ${PL.checked?(show&&i===step.ans?'ok':i===PL.sel?(i===step.ans?'ok':'bad'):''):(i===PL.sel?'sel':'')}" ${PL.checked?'disabled':''} data-i="${i}" onclick="plPickStep(${i})"><b>${i+1}</b><span>${MX(o)}</span></button>`}).join('')}</div>`}`;
+  if(!step.noCheck){
   if(!PL.checked)left+=`<p class="mt2"><button class="btn pri" id="stepsub" ${PL.sel==null?'disabled':''} onclick="plCheckStep()">Check my answer</button></p>`;
   else if(PL.sel===step.ans)left+=`<div class="ban ok mt2"><b>That's it.</b> ${M(step.why)}</div><p class="mt2"><button class="btn pri" onclick="plStepNext()">${d<total-1?'Continue to step '+(d+2):'Continue to the problem'}</button></p>`;
   else if(PL.gaveUp)left+=`<div class="ban note mt2"><b>Here's why:</b> ${M(step.why)}</div><p class="mt2"><button class="btn pri" onclick="plStepNext()">${d<total-1?'Continue to step '+(d+2):'Continue to the problem'}</button></p>`;
   else left+=`<div class="ban bad mt2"><b>Not quite.</b> Look again at the idea above and try once more.</div><div class="row mt2"><button class="btn pri" onclick="plStepRetry()">Try again</button>${PL.tries>=1?`<button class="btn gh" onclick="plStepReveal()">Show me why</button>`:''}</div>`;
-  left+='</div>'}
+  }
+  if(!step.noCheck)left+='</div>'}
 
  // Phase: solve — the real problem, attempted independently
  else if(PL.phase==='solve'){
@@ -3332,7 +3377,7 @@ function probLessonHTML(){
   const ans=ansOf(p),ok=PL.mainSel===ans;
   left+=`<div class="chs${p.text?'':' let'}" role="group">${L5.split('').map((l,i)=>`<button class="ch ${ans!=null&&i===ans?'ok':i===PL.mainSel?(ans==null?'sel':'bad'):''}" disabled data-i="${i}"><b>${l}</b>${p.text?`<span>${M(p.choices[i])}</span>`:''}</button>`).join('')}</div>
   <div class="ban ${ok?'ok':ans==null?'note':'bad'} mt2"><b>${ok?'Correct — you solved it yourself.':ans==null?'Recorded.':'Not quite — the answer is ('+L5[ans]+').'}</b></div>
-  ${p.sol?`<div class="ban note mt2"><div class="ov">Full solution</div><p class="ptext mt2">${M(p.sol)}</p></div>`:''}
+  ${PL.L?plLessonEnd(PL.L):p.sol?`<div class="ban note mt2"><div class="ov">Full solution</div><p class="ptext mt2">${M(p.sol)}</p></div>`:''}
   <div class="row mt"><button class="btn pri" onclick="startSimilar()">Try similar problems</button><button class="btn gh" onclick="closeProbLesson()">Back to problems</button></div>`}
 
  // Phase: practice — similar problems

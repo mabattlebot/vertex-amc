@@ -59,3 +59,8 @@ Every AI feature (tutor chat, feedback on explanations, mistake explanations) ne
 - Server settings (Render → Environment): `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` (both in `render.yaml`). If they are missing, AI requests are refused with `503`.
 - Rate limits apply per signed-in user as well as per address (20 requests per minute).
 - For local development only, `AI_REQUIRE_SIGNIN=false` turns the check off.
+
+## "Teach me how to solve this problem" lessons
+Every lesson has the same structure: what the problem is really asking, a toolkit of every formula/theorem/identity it needs (with why each works), how to find a way in, 2-6 taught steps with quick checks, a "putting it together" bridge, the student's own attempt, then the full solution with reasons, a faster route, common traps, and how to recognize similar problems.
+- **Hand-written lessons** (Difficulty 4 and 5 first): sources in `lessons-src/<test>.js`, built into `public/lessons/<test>.json` with `node scripts/build-lessons.js`. The build fails if a lesson's answer does not match the answer key, and the app also refuses to show a lesson that disagrees with the current key. Available to everyone, no AI call.
+- **Saved AI lessons** for every other problem: the server (`lessons.js`, `POST /api/lesson`, sign-in required) writes a lesson once, rejects it unless its answer matches the key, and saves it in the Supabase `lessons` table; later visitors get the saved copy. Browsers also keep their own copy. Set `SUPABASE_SECRET_KEY` (Supabase → Project Settings → API keys → secret key) in Render so saved lessons survive restarts; without it they are kept in server memory only. If an answer key changes, the lesson for that problem is rewritten.

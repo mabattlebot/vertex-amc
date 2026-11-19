@@ -108,3 +108,19 @@ create or replace function public.answer_keys_stamp() returns trigger
 drop trigger if exists answer_keys_stamp on public.answer_keys;
 create trigger answer_keys_stamp before insert or update on public.answer_keys
   for each row execute function public.answer_keys_stamp();
+
+-- ---------------------------------------------------------------------------
+-- Saved "Teach me how to solve this problem" lessons, written once by the AI and reused.
+-- Only the server (with SUPABASE_SECRET_KEY) reads and writes this table; browsers never touch it directly,
+-- so nobody can plant a lesson. A lesson is regenerated if the problem's answer key changes.
+-- ---------------------------------------------------------------------------
+create table if not exists public.lessons (
+  problem_id text primary key check (problem_id ~ '^20[0-2][0-9][AB][0-9]{1,2}$'),
+  lesson     jsonb not null,
+  answer     text check (answer in ('A','B','C','D','E')),
+  version    integer not null default 2,
+  model      text,
+  created_at timestamptz not null default now()
+);
+alter table public.lessons enable row level security;
+revoke all on public.lessons from anon, authenticated;

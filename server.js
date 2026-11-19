@@ -67,16 +67,27 @@ async function askAI(input){
  if(KEY){try{return await gemini(input)}catch(e){console.error('Gemini failed:',e.message);if(!GKEY)throw e;try{return await groq(input)}catch(e2){console.error('Groq failed:',e2.message);throw new Error(`Primary AI (Gemini) failed: ${e.message}. Backup AI (Groq) also failed: ${e2.message}`)}}}
  if(GKEY)return await groq(input);
  throw new Error('No AI key is set on the server.')}
+// Sign-in check shared by the AI endpoints. Returns the user (or {} when sign-in is off), or null after sending the error.
+async function gate(req,res){
+ if(!KEY&&!GKEY){send(res,503,{error:'Neither GEMINI_API_KEY nor GROQ_API_KEY is set on the server.'});return null}
+ if(AUTH_REQUIRED&&(!SB_URL||!SB_KEY)){send(res,503,{error:'AI sign-in is not configured on the server (set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY).'});return null}
+ let who={};if(AUTH_REQUIRED){try{who=await verifyUser(req)}catch(e){console.error('Auth check failed:',e.message);send(res,503,{error:'Could not check your sign-in right now. Try again shortly.'});return null}
+  if(!who){send(res,401,{error:'Sign in to use the AI tutor.'});return null}}
+ if(limited(clientIp(req))||(who.id&&limited('user:'+who.id))){send(res,429,{error:'Too many requests'});return null}
+ return who}
+async function readJson(req,res,max){let body='';for await(const c of req){body+=c;if(body.length>max){send(res,413,{error:'Too large'});return null}}
+ try{return JSON.parse(body||'{}')}catch(e){send(res,400,{error:'Bad JSON'});return null}}
+const LESSONS=require('./lessons.js')({askAI,dataDir:DATA,sbUrl:SB_URL,sbKey:SB_KEY,sbSecret:process.env.SUPABASE_SECRET_KEY||''});
 http.createServer(async(req,res)=>{const url=req.url.split('?')[0];
  if(url.startsWith('/api/')){const o=req.headers.origin;if(o&&ORIGINS.includes(o)){res.setHeader('Access-Control-Allow-Origin',o);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization')}
   if(req.method=='OPTIONS'){res.writeHead(204);return res.end()}}
  if(url=='/api/health')return send(res,200,{ai:!!(KEY||GKEY),provider:KEY?'gemini':(GKEY?'groq':null),backup:!!(KEY&&GKEY),model:KEY?MODEL:(GKEY?groqModel:null),auth:AUTH_REQUIRED});
- if(url=='/api/ai'&&req.method=='POST'){if(!KEY&&!GKEY)return send(res,503,{error:'Neither GEMINI_API_KEY nor GROQ_API_KEY is set on the server.'});if(AUTH_REQUIRED&&(!SB_URL||!SB_KEY))return send(res,503,{error:'AI sign-in is not configured on the server (set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY).'});
-  let who=null;if(AUTH_REQUIRED){try{who=await verifyUser(req)}catch(e){console.error('Auth check failed:',e.message);return send(res,503,{error:'Could not check your sign-in right now. Try again shortly.'})}
-   if(!who)return send(res,401,{error:'Sign in to use the AI tutor.'})}
-  if(limited(clientIp(req))||(who&&limited('user:'+who.id)))return send(res,429,{error:'Too many requests'});
-  let body='';for await(const c of req){body+=c;if(body.length>200000)return send(res,413,{error:'Too large'})}
-  try{const{input}=JSON.parse(body);if(!input)throw new Error('Missing input');return send(res,200,{text:await askAI(input)})}catch(e){return send(res,500,{error:String(e.message||e)})}}
+ if(url=='/api/ai'&&req.method=='POST'){const who=await gate(req,res);if(!who)return;const b=await readJson(req,res,200000);if(!b)return;
+  try{if(!b.input)throw new Error('Missing input');return send(res,200,{text:await askAI(b.input)})}catch(e){return send(res,500,{error:String(e.message||e)})}}
+ // Saved lessons: returns the stored lesson for a problem, or writes, checks and stores one (one AI call per problem).
+ if(url=='/api/lesson'&&req.method=='POST'){const who=await gate(req,res);if(!who)return;const b=await readJson(req,res,2000);if(!b)return;
+  if(!/^20[0-2][0-9][AB][0-9]{1,2}$/.test(String(b.id||'')))return send(res,400,{error:'Bad problem id'});
+  try{return send(res,200,await LESSONS.get(b.id,KEY?MODEL:groqModel))}catch(e){console.error('Lesson failed:',b.id,e.message);return send(res,e.status||502,{error:String(e.message||e)})}}
  let f=url=='/'?'/index.html':url;const root=f.startsWith('/data/')?DATA:PUB;const file=path.normalize(path.join(root,f.startsWith('/data/')?f.slice(6):f));
  if(!file.startsWith(root))return send(res,403,{error:'Forbidden'});
  fs.readFile(file,(e,d)=>{if(e)return send(res,404,{error:'Not found'});res.writeHead(200,{'Content-Type':MIME[path.extname(file)]||'application/octet-stream'});res.end(d)})
