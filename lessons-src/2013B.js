@@ -1,0 +1,301 @@
+// Hand-written lessons: 2013 AMC 10B, Difficulty 4 and 5.
+const R = String.raw;
+module.exports = {
+
+'2013B16': {
+  answer: 'B',
+  goal: R`Medians $AD$ and $CE$ meet at the centroid $P$, with $PE=1.5$, $PD=2$, $DE=2.5$. We want the area of quadrilateral $AEDC$. Notice $1.5$-$2$-$2.5$ is a $3$-$4$-$5$ triangle, so the medians are perpendicular.`,
+  tools: [
+    { name: 'Centroid ratio', fact: R`AP=2PD,\quad CP=2PE`, why: R`The centroid divides each median $2:1$ from the vertex.` },
+    { name: 'Converse of Pythagoras', fact: R`1.5^2+2^2=2.5^2\Rightarrow\angle EPD=90^\circ`, why: R`$2.25+4=6.25$.` },
+    { name: 'Quadrilateral with perpendicular diagonals', fact: R`\text{Area}=\tfrac12d_1d_2`, why: R`Split along one diagonal into two triangles with heights summing to the other.` }
+  ],
+  approach: R`Recognise the right angle at $P$. The diagonals of $AEDC$ are the medians $AD$ and $CE$, which are perpendicular. Their lengths come from the $2:1$ centroid ratio.`,
+  steps: [
+    { title: 'Perpendicular medians',
+      explain: R`$1.5^2+2^2=2.5^2$, so $\angle EPD=90^\circ$: the medians are perpendicular.`,
+      check: { q: R`Is a triangle with sides $1.5,2,2.5$ right-angled?`, opts: [R`\text{Yes}`, R`\text{No}`, R`\text{Only if isosceles}`, R`\text{Cannot tell}`], ans: 0, why: R`It is $3$-$4$-$5$ scaled by $\tfrac12$.` } },
+    { title: 'Median lengths',
+      explain: R`$AD=AP+PD=4+2=6$ and $CE=CP+PE=3+1.5=4.5$.`,
+      check: { q: R`If $PD=2$, what is $AP$?`, opts: [R`4`, R`2`, R`1`, R`6`], ans: 0, why: R`$AP=2PD$.` } },
+    { title: 'Area',
+      explain: R`$\tfrac12\cdot6\cdot4.5=13.5$.`,
+      check: { q: R`What is $\tfrac12\cdot6\cdot4.5$?`, opts: [R`13.5`, R`27`, R`12`, R`15`], ans: 0, why: R`$3\cdot4.5$.` } }
+  ],
+  bridge: R`Spot the right angle at $P$, find the median lengths, and use $\tfrac12d_1d_2$.`,
+  solution: [
+    R`$PE^2+PD^2=DE^2$, so the medians are perpendicular.`,
+    R`$AD=6$ and $CE=4.5$ by the centroid ratio.`,
+    R`$[AEDC]=\tfrac12\cdot6\cdot4.5=13.5$.`,
+    R`The answer is $\textbf{(B)}\ 13.5$.`
+  ],
+  shortcut: R`Numbers like $1.5,2,2.5$ are a signal: check for a right angle first.`,
+  traps: [R`Using $PE$ and $PD$ as the diagonals.`, R`Forgetting the $2:1$ ratio.`],
+  recognize: R`Medians with given pieces: the centroid ratio gives full lengths, and a hidden right angle makes area easy.`
+},
+
+'2013B17': {
+  answer: 'E',
+  goal: R`Alex trades $2$ red for silver $+$ blue, or $3$ blue for silver $+$ red, until stuck. We count silver tokens: the total number of trades. Track tokens algebraically and find the final state.`,
+  tools: [
+    { name: 'Counting trades', fact: R`r=75-2x+y,\quad b=75+x-3y`, why: R`$x$ red trades and $y$ blue trades.` },
+    { name: 'Final state', fact: R`\text{stuck}\iff r\le1\text{ and }b\le2`, why: R`No trade is possible.` },
+    { name: 'Last-step argument', fact: R`\text{every trade gives a coloured token, so }(r,b)\ne(0,0)\text{ at the end}`, why: R`The last trade left at least one red or blue token.` }
+  ],
+  approach: R`Write the final counts in terms of $x,y$. Solving gives $x=\tfrac{300-3r-b}{5}$, so $3r+b\equiv0\pmod5$. Among stuck states, only $(1,2)$ and $(0,0)$ fit, and $(0,0)$ is impossible. Then $x+y$ follows.`,
+  steps: [
+    { title: 'Which final state',
+      explain: R`From the two equations, $5x=300-3r-b$. Stuck states with $3r+b$ a multiple of $5$: $(0,0)$ and $(1,2)$. The last trade always produces a coloured token, so $(0,0)$ cannot happen.`,
+      check: { q: R`Which of $(r,b)$ with $r\le1,b\le2$ satisfy $3r+b\equiv0\pmod5$?`, opts: [R`(0,0),(1,2)`, R`(1,2)\text{ only}`, R`(0,0)\text{ only}`, R`(1,1),(0,2)`], ans: 0, why: R`$0$ and $5$.` } },
+    { title: 'Solve',
+      explain: R`$r=1,b=2$: $x=\tfrac{300-5}5=59$, $y=r-75+2x=44$. Silver $=59+44=103$.`,
+      check: { q: R`What is $59+44$?`, opts: [R`103`, R`102`, R`104`, R`93`], ans: 0, why: R`Add.` } }
+  ],
+  bridge: R`Write final counts in $x,y$, pick the reachable stuck state, and solve.`,
+  solution: [
+    R`$r=75-2x+y$, $b=75+x-3y$, and the process stops with $r\le1$, $b\le2$.`,
+    R`Divisibility forces $(r,b)=(1,2)$ (the state $(0,0)$ is unreachable).`,
+    R`Then $x=59$, $y=44$.`,
+    R`$103$ silver tokens. The answer is $\textbf{(E)}\ 103$.`
+  ],
+  shortcut: R`Each trade removes one or two coloured tokens net; the final state is determined by the invariant $3r+b\pmod5$.`,
+  traps: [R`Choosing the final state $(0,0)$.`, R`Simulating trades one by one.`],
+  recognize: R`Exchange processes: set up counts in terms of the number of each trade, then use the stopping condition and invariants.`
+},
+
+'2013B18': {
+  answer: 'D',
+  goal: R`We count integers strictly between $1000$ and $2013$ whose units digit equals the sum of the other digits. Write them as $1bcd$ or $20cd$.`,
+  tools: [
+    { name: 'Digit equation', fact: R`d=1+b+c\le9\iff b+c\le8`, why: R`$d$ must be a single digit.` },
+    { name: 'Counting pairs with a bounded sum', fact: R`\#\{(b,c):b+c\le8\}=1+2+\cdots+9=45`, why: R`For sum $s$ there are $s+1$ pairs.` }
+  ],
+  approach: R`For $1000$–$1999$, the condition is $d=1+b+c$, with $b+c\le8$. For $2000$–$2012$, $d=2+b+c$ with the small range; only $2002$ works.`,
+  steps: [
+    { title: 'Numbers $1bcd$',
+      explain: R`$d=1+b+c$ requires $b+c\le8$: $\sum_{s=0}^8(s+1)=45$ numbers.`,
+      check: { q: R`How many digit pairs $(b,c)$ have $b+c=3$?`, opts: [R`4`, R`3`, R`2`, R`6`], ans: 0, why: R`$(0,3),(1,2),(2,1),(3,0)$.` } },
+    { title: 'Numbers $2000$–$2012$',
+      explain: R`$20cd$ with $d=2+c$, and $c\le1$ in this range: $2002$ works; $2013$ is excluded. So $1$ more. Total $46$.`,
+      check: { q: R`Does $2011$ work?`, opts: [R`\text{No}`, R`\text{Yes}`, R`\text{Only in base }9`, R`\text{It is excluded}`], ans: 0, why: R`$2+0+1=3\ne1$.` } }
+  ],
+  bridge: R`Count $1bcd$ with $b+c\le8$, then check $2000$–$2012$.`,
+  solution: [
+    R`$1bcd$: $d=1+b+c$ needs $b+c\le8$: $45$ numbers.`,
+    R`$2000$–$2012$: only $2002$.`,
+    R`Total $46$.`,
+    R`The answer is $\textbf{(D)}\ 46$.`
+  ],
+  shortcut: R`Pairs with sum $\le8$ form a triangle of size $9$: $45$.`,
+  traps: [R`Including $2013$.`, R`Allowing $d\ge10$.`],
+  recognize: R`Digit-sum conditions: fix the leading digits and count solutions of a bounded linear equation.`
+},
+
+'2013B19': {
+  answer: 'D',
+  goal: R`$c,b,a$ form an arithmetic sequence with $a\ge b\ge c\ge0$, and $ax^2+bx+c$ has exactly one root. We want that root. One root means the discriminant is zero; the arithmetic condition links $a,b,c$.`,
+  tools: [
+    { name: 'Double root', fact: R`b^2=4ac,\quad\text{root }=-\tfrac{b}{2a}`, why: R`Discriminant zero.` },
+    { name: 'Arithmetic sequence', fact: R`b=a-d,\ c=a-2d,\ d\ge0`, why: R`Common difference $-d$ going from $a$ to $c$.` }
+  ],
+  approach: R`Write $b,c$ in terms of $a$ and $d$, set $b^2=4ac$, and solve for $t=\tfrac da$. Then the root is $-\tfrac{1-t}{2}$.`,
+  steps: [
+    { title: 'Set up',
+      explain: R`$(a-d)^2=4a(a-2d)$ gives $3a^2-6ad-d^2=0$. With $t=\tfrac da$: $t^2+6t-3=0$.`,
+      check: { q: R`Expand $(a-d)^2-4a(a-2d)$.`, opts: [R`-3a^2+6ad+d^2`, R`3a^2-6ad`, R`a^2-d^2`, R`-3a^2-2ad+d^2`], ans: 0, why: R`$a^2-2ad+d^2-4a^2+8ad$.` } },
+    { title: 'Solve and find the root',
+      explain: R`$t=-3+2\sqrt3$ (positive root). Root $=-\tfrac{b}{2a}=-\tfrac{1-t}{2}=-\tfrac{4-2\sqrt3}{2}=-2+\sqrt3$. Check $c\ge0$: $1-2t=7-4\sqrt3>0$.`,
+      check: { q: R`What is the positive root of $t^2+6t-3=0$?`, opts: [R`-3+2\sqrt3`, R`3-2\sqrt3`, R`-3-2\sqrt3`, R`\sqrt3`], ans: 0, why: R`$\tfrac{-6+\sqrt{48}}{2}$.` } }
+  ],
+  bridge: R`Use $b^2=4ac$ with the arithmetic sequence, solve for $\tfrac da$, and compute $-\tfrac b{2a}$.`,
+  solution: [
+    R`$b=a-d$, $c=a-2d$; $b^2=4ac$ gives $t^2+6t-3=0$ for $t=\tfrac da$.`,
+    R`$t=-3+2\sqrt3$.`,
+    R`Root $-\tfrac{1-t}{2}=-2+\sqrt3$.`,
+    R`The answer is $\textbf{(D)}$.`
+  ],
+  shortcut: R`Scale so $a=1$ from the start.`,
+  traps: [R`Taking the negative root of $t$.`, R`Using $-\tfrac b{a}$ instead of $-\tfrac b{2a}$.`],
+  recognize: R`"Exactly one root": discriminant zero, root $-\tfrac b{2a}$; normalise $a=1$.`
+},
+
+'2013B20': {
+  answer: 'B',
+  goal: R`Write $2013$ as a ratio of products of factorials, minimising $a_1+b_1$ (the largest factorials on top and bottom). We want $|a_1-b_1|$. Large primes force how big the factorials must be.`,
+  tools: [
+    { name: 'Primes in factorials', fact: R`p\mid m!\iff m\ge p`, why: R`$m!$ contains every number up to $m$.` },
+    { name: 'Cancelling a prime', fact: R`p\mid a_1!,\ p\nmid2013\Rightarrow b_1\ge p\ \text{(for large }p)`, why: R`A prime between $\tfrac{a_1}{2}$ and $a_1$ appears once in $a_1!$ and must be cancelled.` }
+  ],
+  approach: R`$2013=3\cdot11\cdot61$, so $61$ must appear on top: $a_1\ge61$. Then $59$ (a prime not dividing $2013$) appears in $a_1!$ and must be cancelled: $b_1\ge59$. Show $a_1=61$, $b_1=59$ is achievable.`,
+  steps: [
+    { title: 'Lower bounds',
+      explain: R`$61$ divides $2013$, so some $a_i\ge61$: $a_1\ge61$. Then $59\mid a_1!$ but $59\nmid2013$, so the denominator needs $59$: $b_1\ge59$.`,
+      check: { q: R`What is the largest prime factor of $2013$?`, opts: [R`61`, R`11`, R`3`, R`2013`], ans: 0, why: R`$2013=3\cdot11\cdot61$.` } },
+    { title: 'An example',
+      explain: R`$\tfrac{61!}{59!}=61\cdot60$. Then $2013=\tfrac{61!}{59!}\cdot\tfrac{11}{20}$, and $\tfrac{11}{20}=\tfrac{11!}{10!}\cdot\tfrac{3!}{5!}$. So $2013=\tfrac{61!\,11!\,3!}{59!\,10!\,5!}$ works. $|a_1-b_1|=2$.`,
+      check: { q: R`What is $\tfrac{3!}{5!}$?`, opts: [R`\tfrac1{20}`, R`\tfrac1{10}`, R`\tfrac15`, R`\tfrac{1}{60}`], ans: 0, why: R`$\tfrac{6}{120}$.` } }
+  ],
+  bridge: R`Use the prime $61$ for $a_1$ and the prime $59$ for $b_1$, then build an example.`,
+  solution: [
+    R`$61\mid2013$ forces $a_1\ge61$.`,
+    R`Then $59\mid a_1!$ must cancel, so $b_1\ge59$.`,
+    R`$2013=\tfrac{61!\,11!\,3!}{59!\,10!\,5!}$ achieves $a_1=61$, $b_1=59$.`,
+    R`$|a_1-b_1|=2$. The answer is $\textbf{(B)}\ 2$.`
+  ],
+  shortcut: R`Twin-like primes ($59,61$) around the largest prime factor decide the answer.`,
+  traps: [R`Taking $b_1=60$.`, R`Thinking $b_1$ can be small.`],
+  recognize: R`Factorial ratios equal to a given number: the largest prime factor and the nearest prime below it fix the largest factorials.`
+},
+
+'2013B21': {
+  answer: 'C',
+  goal: R`Two non-decreasing Fibonacci-like sequences with different starting terms have the same $7$th term $N$. We want the smallest $N$. Express the $7$th term in the first two terms.`,
+  tools: [
+    { name: 'Seventh term', fact: R`a,\ b,\ a+b,\ a+2b,\ 2a+3b,\ 3a+5b,\ 5a+8b`, why: R`Fibonacci coefficients.` },
+    { name: 'Integer solutions', fact: R`5a+8b=N\Rightarrow(a,b)\to(a+8,b-5)`, why: R`Adding $8$ to $a$ and subtracting $5$ from $b$ keeps $5a+8b$.` }
+  ],
+  approach: R`$N=5a+8b$ with $0\le a\le b$. Two different starts give the same $N$ only if they differ by multiples of $(8,-5)$. The one with larger $a$ must still satisfy $a\le b$; minimise $N$.`,
+  steps: [
+    { title: 'Seventh term',
+      explain: R`The terms are $a,b,a+b,a+2b,2a+3b,3a+5b,5a+8b$. So $N=5a+8b$, with $0\le a\le b$ (non-decreasing).`,
+      check: { q: R`What is the $5$th term in terms of $a,b$?`, opts: [R`2a+3b`, R`3a+5b`, R`a+2b`, R`2a+2b`], ans: 0, why: R`$(a+b)+(a+2b)$.` } },
+    { title: 'Two starts',
+      explain: R`Two solutions $(a,b)$ and $(a+8,b-5)$ with both non-decreasing: need $a+8\le b-5$, i.e. $b\ge a+13$. Minimise $5a+8b$: $a=0$, $b=13$ gives $N=104$; the other sequence starts $(8,8)$.`,
+      check: { q: R`What is $5\cdot8+8\cdot8$?`, opts: [R`104`, R`96`, R`112`, R`89`], ans: 0, why: R`$40+64$.` } }
+  ],
+  bridge: R`Write $N=5a+8b$ and find two non-decreasing solutions differing by $(8,-5)$.`,
+  solution: [
+    R`The seventh term is $5a+8b$ with $0\le a\le b$.`,
+    R`Two solutions differ by $(8,-5)$; both valid needs $b\ge a+13$.`,
+    R`Smallest: $(0,13)$ and $(8,8)$, $N=104$.`,
+    R`The answer is $\textbf{(C)}\ 104$.`
+  ],
+  shortcut: R`Check: $0,13,13,26,39,65,104$ and $8,8,16,24,40,64,104$.`,
+  traps: [R`Forgetting the non-decreasing condition.`, R`Choosing $89$ (a Fibonacci number, but only one sequence).`],
+  recognize: R`Linear recurrences: express a later term as a linear combination of the first terms, then solve a linear Diophantine equation.`
+},
+
+'2013B22': {
+  answer: 'C',
+  goal: R`Digits $1$–$9$ go on the octagon's vertices and centre $J$ so the four lines through $J$ have equal sums. Each line is $J$ plus a pair of opposite vertices, so the four opposite pairs must have equal sums.`,
+  tools: [
+    { name: 'Equal pair sums', fact: R`4S=45-J\Rightarrow J\equiv1\pmod4`, why: R`The eight vertex digits split into four pairs with equal sum $S$.` },
+    { name: 'Counting placements', fact: R`4!\cdot2^4=384`, why: R`Assign the four pairs to the four lines, and orient each pair.` }
+  ],
+  approach: R`$J\in\{1,5,9\}$. For each, the remaining digits pair up uniquely into equal sums. Then count ways to place the pairs on the four lines.`,
+  steps: [
+    { title: 'Choose $J$',
+      explain: R`$45-J$ must be divisible by $4$: $J=1,5,9$.`,
+      check: { q: R`For $J=5$, what must each pair sum to?`, opts: [R`10`, R`11`, R`9`, R`12`], ans: 0, why: R`$\tfrac{40}{4}$.` } },
+    { title: 'The pairs',
+      explain: R`$J=1$: $\{2,9\},\{3,8\},\{4,7\},\{5,6\}$. $J=5$: $\{1,9\},\{2,8\},\{3,7\},\{4,6\}$. $J=9$: $\{1,8\},\{2,7\},\{3,6\},\{4,5\}$. Each pairing is forced.`,
+      check: { q: R`For $J=9$, which digit pairs with $3$?`, opts: [R`6`, R`5`, R`7`, R`8`], ans: 0, why: R`Pairs sum to $9$.` } },
+    { title: 'Count',
+      explain: R`Assign pairs to lines: $4!$; orient each: $2^4$. Per $J$: $384$. Total $3\cdot384=1152$.`,
+      check: { q: R`What is $3\cdot384$?`, opts: [R`1152`, R`1052`, R`1252`, R`768`], ans: 0, why: R`Multiply.` } }
+  ],
+  bridge: R`Find the possible centres, the forced pairings, and count placements.`,
+  solution: [
+    R`Opposite vertex pairs must have equal sums $S$, so $4S=45-J$ and $J\in\{1,5,9\}$.`,
+    R`Each $J$ forces a unique pairing of the other digits.`,
+    R`Placements: $4!\cdot2^4=384$ per $J$.`,
+    R`Total $1152$. The answer is $\textbf{(C)}\ 1152$.`
+  ],
+  shortcut: R`Lines through a common centre: subtract the centre and work with pairs.`,
+  traps: [R`Treating rotations as identical (the problem counts all labellings).`, R`Allowing other centre values.`],
+  recognize: R`Equal line sums through a shared point: remove the shared value; the rest must split into equal-sum groups.`
+},
+
+'2013B23': {
+  answer: 'B',
+  goal: R`In the $13$-$14$-$15$ triangle, $D$ is the foot of the altitude from $A$, $E$ the foot of the perpendicular from $D$ to $AC$, and $F$ on $DE$ with $\angle AFB=90^\circ$. We want $DF$. Coordinates make each condition a line or a dot product.`,
+  tools: [
+    { name: 'The $13$-$14$-$15$ triangle', fact: R`AD=12,\ BD=5,\ DC=9`, why: R`It splits into $5$-$12$-$13$ and $9$-$12$-$15$ right triangles.` },
+    { name: 'Perpendicular vectors', fact: R`(F-A)\cdot(F-B)=0`, why: R`$\angle AFB=90^\circ$.` },
+    { name: 'Perpendicular slopes', fact: R`m_1m_2=-1`, why: R`$DE\perp AC$.` }
+  ],
+  approach: R`Put $D$ at the origin, $B=(-5,0)$, $C=(9,0)$, $A=(0,12)$. $AC$ has slope $-\tfrac43$, so $DE$ has slope $\tfrac34$: points $F=(4t,3t)$. The right angle at $F$ gives one equation for $t$, and $DF=5t$.`,
+  steps: [
+    { title: 'Coordinates',
+      explain: R`$D=(0,0)$, $A=(0,12)$, $B=(-5,0)$, $C=(9,0)$. $DE\perp AC$ means direction $(4,3)$: $F=(4t,3t)$.`,
+      check: { q: R`What is the slope of $AC$ from $(0,12)$ to $(9,0)$?`, opts: [R`-\tfrac43`, R`-\tfrac34`, R`\tfrac43`, R`-12`], ans: 0, why: R`$\tfrac{-12}{9}$.` } },
+    { title: 'Right angle at $F$',
+      explain: R`$(4t,3t-12)\cdot(4t+5,3t)=16t^2+20t+9t^2-36t=25t^2-16t=0$, so $t=\tfrac{16}{25}$.`,
+      check: { q: R`Solve $25t^2-16t=0$ for $t>0$.`, opts: [R`\tfrac{16}{25}`, R`\tfrac{25}{16}`, R`\tfrac45`, R`\tfrac{16}5`], ans: 0, why: R`$t(25t-16)=0$.` } },
+    { title: 'Length',
+      explain: R`$DF=5t=\tfrac{16}5$, so $m+n=21$.`,
+      check: { q: R`What is $5\cdot\tfrac{16}{25}$?`, opts: [R`\tfrac{16}5`, R`\tfrac{80}{25}\cdot5`, R`\tfrac{16}{25}`, R`16`], ans: 0, why: R`Simplify.` } }
+  ],
+  bridge: R`Coordinates with $D$ at the origin, parametrise $DE$, and use the right angle at $F$.`,
+  solution: [
+    R`$D=(0,0)$, $A=(0,12)$, $B=(-5,0)$; $DE$ is along $(4,3)$.`,
+    R`$F=(4t,3t)$ with $(F-A)\cdot(F-B)=0$ gives $t=\tfrac{16}{25}$.`,
+    R`$DF=5t=\tfrac{16}5$; $m+n=21$.`,
+    R`The answer is $\textbf{(B)}\ 21$.`
+  ],
+  shortcut: R`$F$ lies on the circle with diameter $AB$ (since $\angle AFB=90^\circ$); intersect it with line $DE$.`,
+  traps: [R`Confusing $DF$ with $DE$ ($DE=\tfrac{36}5$).`, R`Wrong slope for $DE$.`],
+  recognize: R`Chains of perpendicular feet: coordinates and dot products turn each condition into algebra.`
+},
+
+'2013B24': {
+  answer: 'A',
+  goal: R`$n$ is nice if it is the divisor sum of some $m$ with exactly four divisors. Such $m$ is $p^3$ or $pq$. We test $2010$–$2019$.`,
+  tools: [
+    { name: 'Numbers with four divisors', fact: R`m=p^3\ (\sigma=1+p+p^2+p^3)\ \text{or}\ m=pq\ (\sigma=(1+p)(1+q))`, why: R`$d(m)=4$ means exponents $(3)$ or $(1,1)$.` },
+    { name: 'Parity of $(1+p)(1+q)$', fact: R`p,q\text{ odd}\Rightarrow4\mid\sigma;\ p=2\Rightarrow\sigma=3(1+q)`, why: R`$1+p$ is even for odd $p$.` }
+  ],
+  approach: R`The $p^3$ sums near $2015$ are $1464$ ($p=11$) and $2380$ ($p=13$): none in range. For $pq$: if both odd, $4\mid n$ and $n=(1+p)(1+q)$; if $p=2$, $3\mid n$ and $q=\tfrac n3-1$ must be prime. Check each $n$.`,
+  steps: [
+    { title: 'Cube case',
+      explain: R`$1+11+121+1331=1464$ and $1+13+169+2197=2380$: none between $2010$ and $2019$.`,
+      check: { q: R`What is $\sigma(13^3)$?`, opts: [R`2380`, R`2197`, R`2370`, R`2184`], ans: 0, why: R`$1+13+169+2197$.` } },
+    { title: 'Check each number',
+      explain: R`Multiples of $4$: $2012=4\cdot503$ needs $(1+p)(1+q)$ with both factors even; $503$ is odd, so only $2\cdot1006$, giving $p=1$: no. $2016=4\cdot504$ gives $p=3$, $q=503$ (prime): yes. Multiples of $3$ with $p=2$: $2010\to669$, $2013\to670$, $2016\to671$, $2019\to672$: none prime. So only $2016$.`,
+      check: { q: R`Is $503$ prime?`, opts: [R`\text{Yes}`, R`\text{No, }503=7\cdot71.9`, R`\text{No, divisible by }3`, R`\text{No, divisible by }13`], ans: 0, why: R`No prime up to $\sqrt{503}<23$ divides it.` } }
+  ],
+  bridge: R`Rule out the cube case, then test each number as $(1+p)(1+q)$.`,
+  solution: [
+    R`$m=p^3$ gives sums $1464$ and $2380$: none in range.`,
+    R`$m=pq$: odd $p,q$ need $4\mid n$; $p=2$ needs $3\mid n$ with $\tfrac n3-1$ prime.`,
+    R`Only $2016=(1+3)(1+503)$ works.`,
+    R`One nice number. The answer is $\textbf{(A)}\ 1$.`
+  ],
+  shortcut: R`Parity quickly eliminates odd numbers and numbers $\equiv2\pmod4$ unless $3\mid n$.`,
+  traps: [R`Forgetting the $p=2$ case.`, R`Accepting $2012$ via $4\cdot503$ (needs both factors even).`],
+  recognize: R`Divisor-sum problems: classify $m$ by its prime structure and test candidates with parity and divisibility.`
+},
+
+'2013B25': {
+  answer: 'E',
+  goal: R`$N$'s base-$5$ and base-$6$ representations are read as decimal numbers and added to get $S$. We count three-digit $N$ where the last two digits of $S$ match those of $2N$. Everything depends only on $N$ modulo $900$.`,
+  tools: [
+    { name: 'Last digits in a base', fact: R`\text{last digit in base }b=N\bmod b;\ \text{last two digits come from }N\bmod b^2`, why: R`Base representation.` },
+    { name: 'Periodicity', fact: R`\text{condition depends on }N\bmod\operatorname{lcm}(25,36,50)=900`, why: R`$S\bmod100$ uses $N\bmod25$ and $N\bmod36$; $2N\bmod100$ uses $N\bmod50$.` },
+    { name: 'Units then tens', fact: R`\text{units: }N\equiv0..4\pmod{30};\ \text{tens: a condition on }q=\lfloor N/30\rfloor`, why: R`Check the units digit first, then the tens digit.` }
+  ],
+  approach: R`$100$–$999$ is $900$ consecutive numbers, so each residue mod $900$ appears once. Units digits: $(N\bmod5)+(N\bmod6)\equiv2N\pmod{10}$ holds exactly when $N\equiv r\pmod{30}$ with $r\in\{0,1,2,3,4\}$. Writing $N=30q+r$, the tens condition becomes $(q\bmod5)+(-q\bmod6)\equiv6q\pmod{10}$, true for $5$ values of $q$ mod $30$.`,
+  steps: [
+    { title: 'Units digit',
+      explain: R`The units digit of $S$ is $(N\bmod5)+(N\bmod6)$ mod $10$; of $2N$ it is $2N\bmod10$. These depend on $N\bmod30$, and checking the $30$ residues, they match exactly for $r=0,1,2,3,4$ (where $N\bmod5=N\bmod6=N\bmod10=r$).`,
+      check: { q: R`For $N\equiv3\pmod{30}$, what are $N\bmod5$ and $N\bmod6$?`, opts: [R`3\text{ and }3`, R`3\text{ and }0`, R`0\text{ and }3`, R`1\text{ and }3`], ans: 0, why: R`$30$ is a multiple of both.` } },
+    { title: 'Tens digit',
+      explain: R`With $N=30q+r$: base-$5$ tens digit is $q\bmod5$, base-$6$ tens digit is $(-q)\bmod6$, and $2N$'s tens digit is determined by $6q\bmod10$. The condition $(q\bmod5)+((-q)\bmod6)\equiv6q\pmod{10}$ holds for $q\equiv0,1,12,13,24\pmod{30}$.`,
+      check: { q: R`For $q=12$: is $(12\bmod5)+((-12)\bmod6)\equiv72\pmod{10}$?`, opts: [R`\text{Yes: }2+0=2`, R`\text{No}`, R`\text{Yes: }2+6=8`, R`\text{Only mod }5`], ans: 0, why: R`$72\equiv2$.` } },
+    { title: 'Count',
+      explain: R`$5$ choices of $r$ times $5$ choices of $q$ mod $30$: $25$ residues mod $900$, each appearing once in $100$–$999$: $N=360$–$364$, $390$–$394$, $720$–$724$, $900$–$904$, $930$–$934$.`,
+      check: { q: R`What is $5\cdot5$?`, opts: [R`25`, R`10`, R`20`, R`15`], ans: 0, why: R`Multiply.` } }
+  ],
+  bridge: R`Reduce to $N\bmod900$; units digit forces $N\equiv0..4\pmod{30}$, then the tens condition picks $5$ values of $q$.`,
+  solution: [
+    R`The condition depends only on $N\bmod900$, and $100$–$999$ covers each residue once.`,
+    R`Units digits match iff $N\equiv0,1,2,3,4\pmod{30}$.`,
+    R`With $N=30q+r$, tens digits match iff $q\equiv0,1,12,13,24\pmod{30}$.`,
+    R`$25$ values of $N$. The answer is $\textbf{(E)}\ 25$.`
+  ],
+  shortcut: R`Find one solution block (like $360$–$364$) and notice the units digit can be any of $0$–$4$ within it.`,
+  traps: [R`Matching only the units digit ($150$ values).`, R`Forgetting that the range is exactly one full period of $900$.`],
+  recognize: R`Mixed-base digit problems: last digits depend on remainders; find the overall period and count residues.`
+}
+
+};
