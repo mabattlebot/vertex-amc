@@ -188,9 +188,12 @@ module.exports = {
   ],
   approach: R`Count all assignments, subtract those with red empty and those with blue empty, add back those with both empty.`,
   steps: [
-    { title: 'Count',
-      explain: R`$3^7=2187$; red empty: $2^7=128$; blue empty: $128$; both empty: $1$. So $2187-256+1=1932$.`,
-      check: { q: R`What is $3^7$?`, opts: [R`2187`, R`729`, R`2048`, R`6561`], ans: 0, why: R`$729\cdot3$.` } }
+    { title: 'All assignments',
+      explain: R`Each of the $7$ distinct candies independently chooses one of $3$ bags: $3^7=2187$ assignments, including the bad ones where red or blue is empty.`,
+      check: { q: R`What is $3^7$?`, opts: [R`2187`, R`729`, R`2048`, R`6561`], ans: 0, why: R`$729\cdot3$.` } },
+    { title: 'Remove the bad ones',
+      explain: R`Red empty: every candy goes to blue or white, $2^7=128$. Blue empty: also $128$. Both empty (all white): $1$, which was subtracted twice, so add it back. $2187-128-128+1=1932$.`,
+      check: { q: R`How many assignments leave the red bag empty?`, opts: [R`128`, R`64`, R`2187`, R`1`], ans: 0, why: R`$2^7$.` } }
   ],
   bridge: R`Inclusion–exclusion on the empty bags.`,
   solution: [
