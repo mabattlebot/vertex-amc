@@ -75,7 +75,7 @@ module.exports = {
       check: { q: R`If $1$ is opposite $8$, what would $8$'s three neighbours sum to?`, opts: [R`3`, R`10`, R`2`, R`16`], ans: 0, why: R`Opposite $+2=3$.` } },
     { title: 'Count',
       explain: R`Put $8$ on top and $1$ below it. The two side faces through edge $8$–$1$ force the parallel edges to sum to $9$: pairs $\{2,7\},\{3,6\},\{4,5\}$. The top face needs $8+(\text{three top ends})=18$, so the top ends are $2,3,5$. Assign the three pairs to the three edges: $3!=6$ ways. Placing $8$ and $1$ used up all rotational freedom, so there are $6$ arrangements.`,
-      check: { q: R`Which choice of one number from each of $\{2,7\},\{3,6\},\{4,5\}$ sums to $10$?`, opts: [R`2,3,5`, R`2,6,4`, R`7,3,...`, R`2,3,4`], ans: 0, why: R`$2+3+5=10$; the others are too big or too small.` } }
+      check: { q: R`Which choice of one number from each of $\{2,7\},\{3,6\},\{4,5\}$ sums to $10$?`, opts: [R`2,3,5`, R`2,6,4`, R`7,3,4`, R`2,3,4`], ans: 0, why: R`$2+3+5=10$; the others are too big or too small.` } }
   ],
   bridge: R`Get $S=18$, show $1$ is adjacent to $8$, then count assignments of the pairs summing to $9$.`,
   solution: [
