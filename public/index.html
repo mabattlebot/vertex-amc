@@ -60,6 +60,13 @@ textarea,input[type=text],select{width:100%;font:inherit;color:var(--ink);backgr
 @keyframes blink{0%,100%{opacity:.25}50%{opacity:1}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+/* pausable timer: the problem is blurred and locked while paused */
+.tmr{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}.timer.paused{background:var(--sub);color:var(--t3)}
+.pz{position:relative}.pz.on>.pzb{filter:blur(14px);pointer-events:none;user-select:none;min-height:240px}
+.pz-ov{position:absolute;inset:0;z-index:5;display:flex;align-items:flex-start;justify-content:center;padding:60px 16px}
+.pz-ov .card{max-width:360px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.18)}
+details.sw>summary{cursor:pointer;font-weight:600;padding:8px 0}details.sw>summary .t3{font-weight:400}
+@media (prefers-reduced-motion:no-preference){.pz.on>.pzb{transition:filter .15s}}
 </style>
 <div class="app"><nav class="side" aria-label="Sections"><div class="logo"><i>V</i>Vertex</div>
 <a href="#dashboard" data-r="dashboard">Dashboard</a><a href="#concepts" data-r="concepts">Learn</a><a href="#trainer" data-r="trainer">Trainer</a><a href="#lessons" data-r="lessons">Speed</a><a href="#library" data-r="library">Library</a><a href="#profile" data-r="profile" id="navProfile" class="pf-nav">Sign in</a></nav>
@@ -3021,21 +3028,67 @@ const DRL=DRLQ.map(([q,n])=>[q,SP.findIndex(s=>s.n===n)]);
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const mmss=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
 const num=v=>{v=String(v).trim().replace(/,/g,'');if(/^-?\d+(\.\d+)?\/\d+(\.\d+)?$/.test(v)){const[a,b]=v.split('/');return a/b}return v===''?NaN:Number(v)};
-let S={solved:0,correct:0,fast:0,time:0,ad:2,topics:{},seen:{},speed:{},cm:{}};
-try{const r=localStorage.getItem('vertex-v3');if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
-S.cm=Object.assign({done:{},cur:null,stage:'intro',step:0,li:0,pq:[],pi:0,miss:0},S.cm||{});
-const save=()=>{try{localStorage.setItem('vertex-v3',JSON.stringify(S))}catch(e){}if(window.onVertexSave)onVertexSave()};
+/* ---------- progress ----------
+ S is saved in this browser and, when signed in, in the account (cloud.js), and merged across devices.
+ Each graded problem counts once: its first answer goes into the ledger S.rec[id] = [correct 0/1, seconds, fast 0/1, timestamp].
+ solved/correct/fast/time/topics are totals worked out from the ledger, plus S.base (totals saved before the ledger existed).
+ S.cm is the Learn position (S.cm.at = when it last changed; S.cm.saved = concepts left part-way).
+ S.live is what was on screen (current questions, topic sets, speed lessons) so a refresh or another device resumes there. */
+const blankState=()=>({solved:0,correct:0,fast:0,time:0,ad:2,topics:{},seen:{},speed:{},rec:{},base:{solved:0,correct:0,fast:0,time:0,topics:{}},cm:{}});
+let S=blankState();
+try{const r=localStorage.getItem('vertex-v3');if(r)S=Object.assign(blankState(),upgrade(JSON.parse(r)))}catch(e){}
+const cmBlank=()=>({done:{},cur:null,stage:'intro',step:0,li:0,pq:[],pi:0,miss:0,saved:{},at:0});
+S.cm=Object.assign(cmBlank(),S.cm||{});
+// A state saved before the ledger existed keeps its totals as a fixed base; new answers are added on top.
+function upgrade(s){s=s&&typeof s=='object'?s:{};const ob=o=>o&&typeof o=='object'&&!Array.isArray(o);
+ if(!ob(s.rec)){s.rec={};s.base={solved:+s.solved||0,correct:+s.correct||0,fast:+s.fast||0,time:+s.time||0,topics:ob(s.topics)?s.topics:{}}}
+ if(!ob(s.base))s.base={solved:0,correct:0,fast:0,time:0,topics:{}};return s}
+const PBY={};ALL.forEach(p=>PBY[p.id]=p);
+function recompute(s){const b=s.base||{},t={};for(const[k,v] of Object.entries(b.topics||{}))if(v)t[k]={n:+v.n||0,c:+v.c||0};
+ let n=+b.solved||0,c=+b.correct||0,f=+b.fast||0,tm=+b.time||0;
+ for(const[id,r] of Object.entries(s.rec||{})){if(!Array.isArray(r))continue;n++;c+=r[0]?1:0;tm+=+r[1]||0;f+=r[2]?1:0;const p=PBY[id];if(p){const x=t[p.topic]||(t[p.topic]={n:0,c:0});x.n++;if(r[0])x.c++}}
+ s.solved=n;s.correct=c;s.fast=f;s.time=tm;s.topics=t;return s}
+let APP=false,NOSAVE=false;const LAST={};
+const cmPos=()=>{const c=S.cm;return JSON.stringify([c.cur,c.stage,c.step,c.li,c.pq,c.pi,c.miss,c.saved])};
+// Writes progress. Timestamps move only when the Learn position or the on-screen state actually changed.
+const save=quiet=>{if(NOSAVE)return;if(APP){const L=liveSnap(),j=JSON.stringify(L);if(j!==LAST.live){LAST.live=j;L.at=Date.now();S.live=L}
+  const p=cmPos();if(p!==LAST.pos){LAST.pos=p;S.cm.at=Date.now()}}
+ try{localStorage.setItem('vertex-v3',JSON.stringify(S))}catch(e){}if(quiet!==true&&window.onVertexSave)onVertexSave()};
 /* Progress saved by an earlier version can point at lessons or shortcuts that no longer exist
    (the 6 broad lessons became 256 specific ones). Drop only those stale pointers; keep all stats. */
-(function migrate(){const s=S.cm;if(!s.done||typeof s.done!='object')s.done={};
+function fixState(){const s=S.cm;if(!s.done||typeof s.done!='object')s.done={};
  for(const k of Object.keys(s.done))if(!CON[k])delete s.done[k];
  if(s.cur&&!CON[s.cur]){s.cur=null;s.stage='intro';s.step=0;s.li=0;s.miss=0;s.pq=[];s.pi=0}
- if(!Array.isArray(s.pq))s.pq=[];s.pq=s.pq.filter(id=>ALL.some(p=>p.id==id));
+ if(!Array.isArray(s.pq))s.pq=[];s.pq=s.pq.filter(id=>PBY[id]);
  if(s.cur){const n=CON[s.cur].ideas.length+CON[s.cur].checks.length+2;if(!(s.step>=0&&s.step<n))s.step=0;if(!(s.li>=0&&s.li<4))s.li=0;
   if(s.stage=='practice'&&!s.pq[s.pi]){s.stage='intro';s.step=0}}
+ if(!s.saved||typeof s.saved!='object'||Array.isArray(s.saved))s.saved={};
+ for(const[k,v] of Object.entries(s.saved))if(!CON[k]||s.done[k]||k==s.cur||!v||typeof v!='object')delete s.saved[k];else{v.pq=Array.isArray(v.pq)?v.pq.filter(id=>PBY[id]):[];if(v.stage=='practice'&&!v.pq[v.pi])delete s.saved[k]}
  if(!S.speed||typeof S.speed!='object')S.speed={};for(const k of Object.keys(S.speed))if(!SP[k])delete S.speed[k];
  for(const k of ['topics','seen'])if(!S[k]||typeof S[k]!='object')S[k]={};
- for(const k of ['solved','correct','fast','time'])if(!(S[k]>=0))S[k]=0;if(!(S.ad>=1&&S.ad<=5))S.ad=2})();
+ for(const k of Object.keys(S.rec))if(!Array.isArray(S.rec[k]))delete S.rec[k];
+ if(!(S.ad>=1&&S.ad<=5))S.ad=2;recompute(S)}
+fixState();
+/* Combine two copies of the progress (this browser's and the account's, or two devices').
+   a wins ties. Answers: every problem keeps its earliest answer. Solved beats missed. Best speed times win.
+   Finished concepts are kept from both. Position on screen: the more recently used copy wins. */
+function mergeState(a,b){a=upgrade(JSON.parse(JSON.stringify(a||{})));b=upgrade(JSON.parse(JSON.stringify(b||{})));const m=a;
+ for(const[id,r] of Object.entries(b.rec)){const x=m.rec[id];if(Array.isArray(r)&&(!Array.isArray(x)||(+r[3]||0)<(+x[3]||0)))m.rec[id]=r}
+ if((+b.base.solved||0)>(+m.base.solved||0))m.base=b.base;
+ m.seen=m.seen||{};const rk=v=>v===1?3:v===2?2:v===3?1:0;for(const[id,v] of Object.entries(b.seen||{}))if(rk(v)>rk(m.seen[id]))m.seen[id]=v;
+ m.speed=m.speed||{};for(const[k,v] of Object.entries(b.speed||{}))if(!(m.speed[k]<=v))m.speed[k]=v;
+ const ca=m.cm=Object.assign(cmBlank(),m.cm||{}),cb=Object.assign(cmBlank(),b.cm||{});
+ ca.done=Object.assign({},cb.done,ca.done);
+ for(const[k,v] of Object.entries(cb.saved||{}))if(v&&(!ca.saved[k]||(+v.at||0)>(+ca.saved[k].at||0)))ca.saved[k]=v;
+ if((+cb.at||0)>(+ca.at||0)){
+  // keep the losing copy's half-finished concept so it can be resumed later
+  if(ca.cur&&ca.cur!==cb.cur&&ca.stage!='intro'&&!ca.done[ca.cur]&&!(ca.saved[ca.cur]&&(+ca.saved[ca.cur].at||0)>(+ca.at||0)))ca.saved[ca.cur]={stage:ca.stage,step:ca.step,li:ca.li,miss:ca.miss,pq:ca.pq,pi:ca.pi,at:ca.at};
+  for(const k of ['cur','stage','step','li','pq','pi','miss','at'])ca[k]=cb[k]}
+ if(ca.cur)delete ca.saved[ca.cur];for(const k of Object.keys(ca.done))delete ca.saved[k];
+ if((+b.adAt||0)>(+m.adAt||0)){m.ad=b.ad;m.adAt=b.adAt}
+ if(((b.live&&+b.live.at)||0)>((m.live&&+m.live.at)||0))m.live=b.live;
+ return recompute(m)}
+window.vertexMerge=mergeState;
 /* ---------- math rendering: every string goes through M(), which turns $...$ and $$...$$ into typeset math ---------- */
 let MJ=false;const TC={};
 function tex(t,d){const k=(d?'D':'I')+t;if(TC[k])return TC[k];const raw=`<span class="traw">${esc(t)}</span>`;if(!MJ)return raw;
@@ -3047,13 +3100,31 @@ function M(s){s=String(s??'');let o='',last=0,m;const re=/\\\$|\$\$([\s\S]+?)\$\
 window.MathJax={svg:{fontCache:'none'},options:{enableMenu:false},startup:{typeset:false,ready(){MathJax.startup.defaultReady();MathJax.startup.promise.then(()=>{try{document.head.appendChild(MathJax.svgStylesheet())}catch(e){}MJ=true;render()})}}};
 /* ---------- adaptive target time: easy about 3:30, hard about 7:30; each fast correct answer tightens targets 2.5% (floor 60%) ---------- */
 const BASE={1:210,2:210,3:330,4:450,5:450},factor=()=>Math.max(.6,1-.025*S.fast),target=d=>Math.round(BASE[d]*factor()/5)*5;
-function record(topic,ok,el,d){S.solved++;if(ok)S.correct++;S.time+=el;const t=S.topics[topic]||(S.topics[topic]={n:0,c:0});t.n++;if(ok)t.c++;const fast=ok&&el<=target(d);if(fast)S.fast++;S.ad=Math.max(1,Math.min(5,S.ad+(fast?1:ok?0:-1)));save();return fast}
-let tick=null,T0=0,TT=0;
-function startTimer(d){stopTimer();T0=Date.now();TT=target(d);tick=setInterval(draw,500)}
-function stopTimer(){if(tick){clearInterval(tick);tick=null}return(Date.now()-T0)/1000}
-function draw(){const e=$('#tm');if(!e||!tick)return;const el=(Date.now()-T0)/1000;e.textContent=mmss(el)+' / target '+mmss(TT);e.className='timer'+(el>TT?' over':el>TT*.8?' warn':'')}
-const timerHTML=f=>`<span class="timer" id="tm">${f!=null?mmss(f)+' / target '+mmss(TT):'0:00'}</span>`;
-const timeNote=(el,fast)=>`<span class="mono">Your time ${mmss(el)} · target ${mmss(TT)} · ${fast?'on pace, so your targets just tightened':el<=TT?'on time':'over target'}</span>`;
+// Counts a graded answer only the first time a problem is answered (in any section, on any device).
+const counted=id=>!!S.rec[id]||S.seen[id]===1||S.seen[id]===2;
+function record(p,ok,el){if(counted(p.id))return{fast:false,counted:false};const fast=ok&&el<=target(p.d);
+ S.rec[p.id]=[ok?1:0,Math.round(el),fast?1:0,Date.now()];S.ad=Math.max(1,Math.min(5,S.ad+(fast?1:ok?0:-1)));S.adAt=Date.now();recompute(S);save();return{fast,counted:true}}
+/* ---------- pausable timers ----------
+ A clock is {acc: seconds already run, run: start time while running, or null}. The holder of a clock (a problem Q,
+ the speed lesson SL, the drill DR) has .paused when the student paused it, .tt (target seconds) and .tl (label).
+ Only the timer on screen runs: leaving a page or tab stops it, and coming back starts it again unless paused. */
+const clkNew=()=>({acc:0,run:null});
+const clkEl=c=>c?(+c.acc||0)+(c.run?(Date.now()-c.run)/1000:0):0;
+function clkSet(c,on){if(!c)return;if(on&&!c.run)c.run=Date.now();else if(!on&&c.run){c.acc=clkEl(c);c.run=null}}
+let VIS=null;
+function visClock(){if((route=='concepts'||route=='trainer')&&Q&&Q.phase=='solve'&&Q.clk&&(route=='concepts'||Q.tr))return Q;
+ if(route=='lessons'&&SV.tab=='guided'&&SL.clk&&((SL.phase=='solo'&&!SL.res)||(SL.phase=='real'&&!SL.rres)))return SL;
+ if(route=='lessons'&&SV.tab=='drill'&&DR&&DR.clk&&DR.i<DR.q.length)return DR;return null}
+function syncClocks(){VIS=visClock();for(const h of [QS.concepts,QS.trainer,SL,DR])if(h&&h.clk)clkSet(h.clk,h===VIS&&!h.paused)}
+function draw(){const e=$('#tm'),h=VIS;if(!e||!h)return;const el=clkEl(h.clk),tt=h.tt||0;e.textContent=mmss(el)+(tt?' / '+(h.tl||'target')+' '+mmss(tt):'');e.className='timer'+(tt&&el>tt?' over':tt&&el>tt*.8?' warn':'')+(h.paused?' paused':'')}
+setInterval(draw,500);
+function togglePause(){const h=VIS;if(!h)return;h.paused=!h.paused;render();save();const b=$(h.paused?'#pzgo':'#tmb');if(b)b.focus()}
+const tmLive=h=>`<span class="tmr"><span class="timer${h.paused?' paused':''}" id="tm" role="timer">${mmss(clkEl(h.clk))}${h.tt?' / '+(h.tl||'target')+' '+mmss(h.tt):''}</span><button class="btn sm gh" id="tmb" onclick="togglePause()" aria-pressed="${!!h.paused}">${h.paused?'▶ Resume':'⏸ Pause'}</button></span>`;
+const tmDone=(el,tt,tl)=>`<span class="timer">${mmss(el)}${tt?' / '+(tl||'target')+' '+mmss(tt):''}</span>`;
+const qTimer=()=>Q.phase=='solve'?tmLive(Q):tmDone(Q.el,Q.tt);
+// While paused, the problem (and the tutor beside it) is blurred and cannot be used.
+const pz=(on,html)=>`<div class="pz${on?' on':''}">${on?`<div class="pz-ov"><div class="card"><h3>Paused</h3><p class="t2">The problem is hidden while the timer is stopped.</p><button class="btn pri" id="pzgo" onclick="togglePause()">▶ Resume</button></div></div>`:''}<div class="pzb"${on?' aria-hidden="true" inert':''}>${html}</div></div>`;
+const timeNote=(el,fast,tt)=>`<span class="mono">Your time ${mmss(el)} · target ${mmss(tt)} · ${fast?'on pace, so your targets just tightened':el<=tt?'on time':'over target'}</span>`;
 /* ---------- AI: Gemini through the site's own server when deployed; Claude inside claude.ai; otherwise built-in teaching only ---------- */
 let AI=null,AIname='',AISRV=null;const API=String(window.VERTEX_API||'').replace(/[/]+$/,'');
 // The site's AI server requires a signed-in account (checked on the server). cloud.js provides vertexToken() and calls onVertexAuth().
@@ -3105,15 +3176,53 @@ const IMG={};
 function loadImg(p){const c=ckey(p);return(IMG[c]||(IMG[c]=fetch('p/'+c+'.json').then(r=>{if(!r.ok)throw 0;return r.json()}).catch(()=>{delete IMG[c];return{}}))).then(m=>m[p.number])}
 function fillImgs(){document.querySelectorAll('img[data-pid]').forEach(im=>{if(im.dataset.done)return;im.dataset.done=1;loadImg(byId(im.dataset.pid)).then(s=>{if(s)im.src=s;else im.alt='This problem image could not be loaded. Check your connection and reopen the page.'})})}
 const shot=p=>`<div class="fig shot"><img data-pid="${p.id}" alt="${cite(p)}, original contest screenshot"></div>`;
-let Q=null; /* the question on screen: {p,sel,phase,el,ok,fast,why,fb,busy} */
-function newQ(p){Q={p,sel:null,phase:'solve'};setCoach('problem');startTimer(p.d)}
+let Q=null; /* the question on screen: {p,sel,phase,el,ok,fast,rep,why,fb,busy,clk,paused,tt} */
+/* Learn and the Trainer each keep their own current question, so moving between pages never replaces or re-asks it. */
+let QS={concepts:null,trainer:null};
+function newQ(p,home){Q={p,sel:null,phase:'solve',clk:clkNew(),tt:target(p.d)};if(home)QS[home]=Q;setCoach('problem')}
+/* ---------- saved on-screen state (S.live): restored after a refresh, a sign-in or on another device ---------- */
+const QKEEP=['sel','phase','paused','ok','fast','rep','unk','why','fb','needWhy','tr','tt','key','el'];
+function qSnap(q){if(!q||!q.p)return null;const o={id:q.p.id,t:Math.round(clkEl(q.clk))};for(const k of QKEEP)if(q[k]!=null)o[k]=q[k];return o}
+function qThaw(o){const p=o&&PBY[o.id];if(!p)return null;const q={p,clk:{acc:+o.t||0,run:null}};for(const k of QKEEP)if(o[k]!=null)q[k]=o[k];
+ if(!['solve','explain','feedback'].includes(q.phase))q.phase='solve';if(q.phase!='solve'&&q.el==null)q.el=+o.t||0;if(!(q.tt>0))q.tt=target(p.d);return q}
+const frz=h=>{if(!h)return null;const o=JSON.parse(JSON.stringify(h));if(h.clk)o.clk={acc:Math.round(clkEl(h.clk)),run:null};return o};
+const thaw=o=>{if(!o)return null;const h=JSON.parse(JSON.stringify(o));if(h.clk)h.clk={acc:+h.clk.acc||0,run:null};return h};
+function liveSnap(){return{concepts:qSnap(QS.concepts),trainer:qSnap(QS.trainer),
+ tr:{y:TR.y,c:TR.c,t:TR.t,d:TR.d,queue:TR.queue||null,qi:TR.qi||0,qname:TR.qname||'',qdone:TR.qdone||null},tq:TQ,
+ sl:SL&&SL.g?frz(SL):{i:SL&&SL.i||0},sls:SLS,dr:frz(DR),tab:SV.tab}}
+function liveRestore(){const L=S.live&&typeof S.live=='object'?S.live:{},ob=o=>o&&typeof o=='object'&&!Array.isArray(o);
+ QS.concepts=qThaw(L.concepts);QS.trainer=qThaw(L.trainer);if(QS.trainer)QS.trainer.tr=true;
+ const t=ob(L.tr)?L.tr:{};TR.y=t.y||'';TR.c=t.c||'';TR.t=t.t||'';TR.d=t.d||'adaptive';
+ TR.queue=Array.isArray(t.queue)&&t.queue.length&&t.queue.every(id=>PBY[id])?t.queue:null;TR.qi=TR.queue?Math.max(0,Math.min(t.qi|0,TR.queue.length-1)):0;TR.qname=TR.queue?String(t.qname||''):'';TR.qdone=t.qdone||null;
+ TQ={};if(ob(L.tq))for(const[k,v] of Object.entries(L.tq))if(ob(v)&&v.qi>=0)TQ[k]=v;
+ const okSL=o=>ob(o)&&SP[o.i]&&(!o.g||(ob(o.g)&&Array.isArray(o.g.steps)))&&(o.phase!='real'||realOf(o.i)[o.ri])&&(o.phase!='solo'||ob(o.solo));
+ SL=okSL(L.sl)?(L.sl.g?thaw(L.sl):{i:L.sl.i}):{i:0};
+ SLS={};if(ob(L.sls))for(const[k,v] of Object.entries(L.sls))if(okSL(v)&&v.g)SLS[k]=v;
+ DR=ob(L.dr)&&Array.isArray(L.dr.q)&&L.dr.q.every(i=>DRL[i])?thaw(L.dr):null;if(DR&&DR.i<DR.q.length&&!DR.clk)DR.clk=clkNew();
+ if(['topics','guided','drill'].includes(L.tab))SV.tab=L.tab}
+// Called by cloud.js after merging the account's copy: adopt it, and if the position changed, show it.
+window.vertexCapture=()=>{if(APP)save(true)}; // record what is on screen without starting another upload
+window.vertexUse=function(next){const before=JSON.stringify([S.live||null,cmPos()]),prev=JSON.stringify(S);
+ S=Object.assign(blankState(),upgrade(next||{}));S.cm=Object.assign(cmBlank(),S.cm||{});fixState();
+ const moved=JSON.stringify([S.live||null,cmPos()])!==before;
+ if(moved)liveRestore();
+ LAST.pos=cmPos();LAST.live=JSON.stringify(liveSnap());
+ try{localStorage.setItem('vertex-v3',JSON.stringify(S))}catch(e){}
+ if(moved)return reenter();
+ const ae=document.activeElement;if(JSON.stringify(S)!==prev&&!(ae&&/TEXTAREA|INPUT|SELECT/.test(ae.tagName)))render()};
+function reenter(){if(route=='concepts'||route=='trainer')Q=QS[route]||null;if(route=='concepts')cmEnter();else if(route=='trainer'&&!(Q&&Q.tr))trPick();render()}
 function probCard(){const p=Q.p,done=Q.phase!='solve',ans=ansOf(p),long=p.text&&p.choices.some(c=>c.length>32);
  return `<div class="cite"><b>${cite(p)}</b><span class="chip">${p.topic}</span><span class="chip w">Difficulty ${p.d} of 5</span></div>${p.text?`<div class="ptext">${M(p.text)}</div>${FIG[p.id]?`<div class="fig"><img src="${FIG[p.id]}" alt="Diagram for ${cite(p)}"></div>`:''}`:shot(p)}
  <div class="chs${long?' long':''}${p.text?'':' let'}" role="group" aria-label="Answer choices">${L5.split('').map((l,i)=>`<button class="ch ${done?(ans!=null&&i==ans?'ok':i==Q.sel?(ans==null?'sel':'bad'):''):(i==Q.sel?'sel':'')}" ${done?'disabled':''} data-i="${i}" onclick="choose(${i})" aria-label="Choice ${l}"><b>${l}</b>${p.text?`<span>${M(p.choices[i])}</span>`:''}</button>`).join('')}</div>`}
-function choose(i){Q.sel=i;document.querySelectorAll('.ch').forEach(b=>b.classList.toggle('sel',+b.dataset.i==i));const s=$('#sub');if(s)s.disabled=false}
-function submitQ(){if(!Q||Q.sel==null||Q.phase!='solve')return;Q.el=stopTimer();const ans=ansOf(Q.p);if(ans==null){Q.unk=true;S.seen[Q.p.id]=S.seen[Q.p.id]||3}else{Q.ok=Q.sel===ans;Q.fast=record(Q.p.topic,Q.ok,Q.el,Q.p.d);S.seen[Q.p.id]=Q.ok?1:2}if(window.onVertexAttempt)onVertexAttempt({problem_id:Q.p.id,choice:L5[Q.sel],correct:ans==null?null:Q.ok,seconds:Math.round(Q.el)});save();Q.phase=Q.needWhy?'explain':'feedback';CO.reveal=true;setCoachCtx();render()}
-const resultBan=()=>{const p=Q.p,ans=ansOf(p);if(Q.unk)return `<div class="ban note"><b>Recorded: (${L5[Q.sel]}).</b> The answer key for the ${p.year} ${p.contest} has not been added yet, so this problem cannot be graded automatically. <div class="mono">Your time ${mmss(Q.el)} · target ${mmss(TT)}</div><div class="mt2">${aopsLink(p)}</div></div>`;
- return `<div class="ban ${Q.ok?'ok':'bad'}"><b>${Q.ok?'Correct.':'Not quite. The answer is ('+L5[ans]+') '}</b>${Q.ok||!p.text?'':M(p.choices[ans])} <div>${timeNote(Q.el,Q.fast)}</div><div class="mt2">${aopsLink(p)}</div></div>`};
+function choose(i){if(!Q||Q.phase!='solve'||Q.paused)return;Q.sel=i;document.querySelectorAll('.ch').forEach(b=>b.classList.toggle('sel',+b.dataset.i==i));const s=$('#sub');if(s)s.disabled=false;save()}
+// The answer, the stats and the new phase are saved together, so leaving the page before the reasoning step cannot re-open the problem for a second answer.
+function submitQ(){if(!Q||Q.sel==null||Q.phase!='solve'||Q.paused)return;clkSet(Q.clk,false);Q.el=clkEl(Q.clk);const ans=ansOf(Q.p);
+ if(ans==null){Q.unk=true;S.seen[Q.p.id]=S.seen[Q.p.id]||3}else{Q.ok=Q.sel===ans;const r=record(Q.p,Q.ok,Q.el);Q.fast=r.fast;Q.rep=!r.counted;S.seen[Q.p.id]=Q.ok?1:2}
+ if(window.onVertexAttempt)onVertexAttempt({problem_id:Q.p.id,choice:L5[Q.sel],correct:ans==null?null:Q.ok,seconds:Math.round(Q.el)});
+ Q.phase=Q.needWhy?'explain':'feedback';CO.reveal=true;setCoachCtx();save();render()}
+const repNote=()=>Q.rep?`<div class="mono">You answered this problem before, so it was not counted again in your stats.</div>`:'';
+const resultBan=()=>{const p=Q.p,ans=ansOf(p);if(Q.unk)return `<div class="ban note"><b>Recorded: (${L5[Q.sel]}).</b> The answer key for the ${p.year} ${p.contest} has not been added yet, so this problem cannot be graded automatically. <div class="mono">Your time ${mmss(Q.el)} · target ${mmss(Q.tt)}</div><div class="mt2">${aopsLink(p)}</div></div>`;
+ return `<div class="ban ${Q.ok?'ok':'bad'}"><b>${Q.ok?'Correct.':'Not quite. The answer is ('+L5[ans]+') '}</b>${Q.ok||!p.text?'':M(p.choices[ans])} <div>${Q.rep?`<span class="mono">Your time ${mmss(Q.el)} · target ${mmss(Q.tt)}</span>`:timeNote(Q.el,Q.fast,Q.tt)}</div>${repNote()}<div class="mt2">${aopsLink(p)}</div></div>`};
 const probFacts=p=>p.text?`Problem (${cite(p)}): ${p.text}\nChoices: ${p.choices.map((c,i)=>'('+L5[i]+') '+c).join('  ')}`:`Problem (${cite(p)}), read by OCR from a screenshot so symbols may be garbled or missing: ${p.o}`;
 async function judge(){const p=Q.p;if(!AI)return{src:'local'};
  const prompt=`You are an expert, kind AMC math coach giving feedback on a student's written reasoning.\n${probFacts(p)}\nCorrect answer: (${L5[ansOf(p)]}) ${p.choices[ansOf(p)]}\n${p.sol?'Trusted solution outline: '+p.sol:'No written solution is on file; work the problem out carefully yourself before judging.'}\nThe student chose (${L5[Q.sel]}) ${p.choices[Q.sel]}, which is ${Q.ok?'correct':'incorrect'}.\nStudent's reasoning: """${Q.why}"""\nReply in exactly this format, one item per line, each under 60 words:\nVERDICT: sound | partial | flawed | unclear\nWORKED: what in their reasoning was right\nMISCONCEPTION: the specific wrong idea or slip that most likely produced their answer (or "none")\nFIX: how to correct that idea, shown on this problem\nHABIT: one habit that would make them faster or safer next time\n${STYLE}`;
@@ -3413,14 +3522,18 @@ let prevRoute='trainer';
 let LS={};
 const lessonSteps=c=>[...c.ideas.map((x,i)=>({k:'idea',i})),{k:'ex'},...c.checks.map((x,i)=>({k:'check',i})),{k:'recap'}];
 function cmBoot(){const s=S.cm;if(!s.cur||s.done[s.cur]){s.cur=ORDER.find(k=>!s.done[k])||null;s.stage='intro';s.step=0;s.li=0;s.miss=0;save()}}
-function cmEnter(){cmBoot();const s=S.cm;LS={};Q=null;stopTimer();if(!s.cur)return;
+// Which problem the current Learn stage asks, and a key for that exact spot in the lesson.
+const cmKey=()=>{const s=S.cm;return [s.cur,s.stage,s.li,s.pi].join('|')};
+function cmProb(){const s=S.cm;return s.stage=='test'?pool(s.cur).slice(-1)[0]:s.stage=='ladder'?ladderOf(s.cur)[s.li]:s.stage=='practice'?byId(s.pq[s.pi]):null}
+// Entering Learn resumes the question already in progress at this spot (answered or not); only a new spot gets a new question.
+function cmEnter(){cmBoot();const s=S.cm;LS={};Q=null;if(!s.cur){QS.concepts=null;return}
  if(s.stage=='learn'||s.stage=='intro'||s.stage=='reteach')setCoach('lesson');
  if(s.stage=='learn')lsInit();
  if(s.stage=='reteach'){LS.chk=pick(CON[s.cur].checks)();LS.tries=0}
- if(s.stage=='test'){newQ(pool(s.cur).slice(-1)[0]);Q.needWhy=true}
- if(s.stage=='ladder'){newQ(ladderOf(s.cur)[s.li]);Q.needWhy=true}
- if(s.stage=='practice'){newQ(byId(s.pq[s.pi]));Q.needWhy=true}}
-function cmGo(stage,extra){Object.assign(S.cm,{stage},extra||{});save();cmEnter();render();window.scrollTo(0,0)}
+ const p=cmProb(),old=QS.concepts;if(!p){QS.concepts=null;return}
+ if(old&&old.key==cmKey()&&old.p.id===p.id){Q=old;setCoach('problem');CO.reveal=Q.phase!='solve';setCoachCtx()}
+ else{newQ(p,'concepts');Q.needWhy=true;Q.key=cmKey()}}
+function cmGo(stage,extra){Object.assign(S.cm,{stage},extra||{});QS.concepts=null;cmEnter();save();render();window.scrollTo(0,0)}
 function lsInit(){const st=lessonSteps(CON[S.cm.cur])[S.cm.step];LS={rev:0};if(st&&st.k=='check'){LS.chk=CON[S.cm.cur].checks[st.i]();LS.tries=0}}
 function lsNext(){const s=S.cm,n=lessonSteps(CON[s.cur]).length;if(s.step<n-1){s.step++;save();lsInit();render();window.scrollTo(0,0)}else cmGo('ladder',{li:0,miss:0})}
 function lsBack(){if(S.cm.step>0){S.cm.step--;save();lsInit();render()}}
@@ -3435,21 +3548,30 @@ async function teachBack(){const t=($('#tb')||{}).value||'';if(t.trim().length<1
  try{const r=await AI(`A student just finished a lesson on "${c.name}". The lesson's ideas: ${c.ideas.map(i=>i.h).join(' | ')}\nThey were asked to explain the main idea in their own words:\n"""${t.trim()}"""\nIn under 90 words: say what they got right, correct anything wrong or missing, and finish with one sentence of encouragement. ${STYLE}`);LS.tb=r.text}catch(e){LS.tb=aiErr(e)}LS.tbBusy=false;render()}
 async function reteachAI(){if(!AI||LS.rtBusy||LS.rt)return;LS.rtBusy=true;const c=CON[S.cm.cur],m=LS.missed;
  try{const r=await AI(`A student is learning "${c.name}" and just missed this problem.\n${m?probFacts(m.p)+`\nCorrect answer (${L5[ansOf(m.p)]}); they chose (${L5[m.sel]}). Their reasoning: """${m.why||''}"""${m.p.sol?'\nSolution outline: '+m.p.sol:''}`:''}\nThey already saw this explanation: ${c.reteach}\nRe-teach the underlying idea in a NEW way aimed at their specific mistake: plain words first, then a tiny concrete example worked step by step. Under 140 words. Do not ask a question at the end. ${STYLE}`);LS.rt=r.text}catch(e){LS.rt=''}LS.rtBusy=false;if(S.cm.stage=='reteach'&&route=='concepts')render()}
-function whySubmit(){const t=($('#why')||{}).value||'';if(t.trim().length<10){$('#whymsg').textContent='Write a sentence about how you approached it.';return}const q=Q;q.why=t.trim();q.busy=true;render();judge().then(f=>{q.fb=f;q.busy=false;q.phase='feedback';if(Q===q)render()})}
+function whySubmit(){const t=($('#why')||{}).value||'';if(t.trim().length<10){$('#whymsg').textContent='Write a sentence about how you approached it.';return}const q=Q;q.why=t.trim();q.busy=true;save();render();judge().then(f=>{q.fb=f;q.busy=false;q.phase='feedback';save();if(Q===q)render()})}
+// Easier problems (difficulty 1 to 3) can skip the written reasoning and go straight to the solution.
+function whySkip(){if(!Q||Q.phase!='explain'||Q.busy||Q.p.d>3)return;Q.phase='feedback';Q.fb={src:'skip'};save();render()}
 function cmNext(){const s=S.cm,id=s.cur;
  if(s.stage=='test'){if(Q.ok){s.done[id]={tested:1,miss:0};return cmGo('intro')}return cmGo('learn',{step:0})}
  if(s.stage=='ladder'){if(Q.ok){s.li++;if(s.li>=4){s.done[id]={miss:s.miss};return cmGo('intro')}return cmGo('ladder')}
   const missed={p:Q.p,sel:Q.sel,why:Q.why};s.miss++;s.pq=practiceFor(id,Q.p);s.pi=0;cmGo('reteach');LS.missed=missed;reteachAI();render();return}
  if(s.stage=='practice'){s.pi++;if(s.pi<s.pq.length)return cmGo('practice');s.li++;if(s.li>=4){s.done[id]={miss:s.miss};return cmGo('intro')}return cmGo('ladder')}}
-function cmPick(k){const s=S.cm;s.cur=k;s.stage='intro';s.step=0;s.li=0;s.miss=0;save();cmEnter();render();window.scrollTo(0,0)}
-let LV={q:'',cat:''};
+/* Switch concept at any point. A concept left part-way is kept in S.cm.saved (with its current question)
+   and picked up where it was when the student comes back to it. */
+function cmPick(k){const s=S.cm;LV.open=false;if(k===s.cur){render();return}
+ if(s.cur&&!s.done[s.cur]&&s.stage!='intro')s.saved[s.cur]={stage:s.stage,step:s.step,li:s.li,miss:s.miss,pq:s.pq,pi:s.pi,q:qSnap(QS.concepts),at:Date.now()};
+ const sv=s.saved[k];delete s.saved[k];s.cur=k;
+ if(sv&&!s.done[k]){Object.assign(s,{stage:sv.stage,step:sv.step|0,li:sv.li|0,miss:sv.miss|0,pq:Array.isArray(sv.pq)?sv.pq:[],pi:sv.pi|0});QS.concepts=qThaw(sv.q)}
+ else{Object.assign(s,{stage:'intro',step:0,li:0,miss:0,pq:[],pi:0});QS.concepts=null}
+ fixState();cmEnter();save();render();window.scrollTo(0,0)}
+let LV={q:'',cat:'',open:false};
 function lvUp(){const e=$('#lvlist');if(e)e.innerHTML=lessonList()}
 function lessonList(){const s=S.cm,q=LV.q.toLowerCase();let h='',shown=0;
  LCATS.forEach(c=>{if(LV.cat&&LV.cat!=c)return;
   const ls=ORDER.map(k=>[CON[k],k]).filter(([l])=>l.c==c&&(!q||(l.n+' '+l.why).toLowerCase().includes(q)));
   if(!ls.length)return;shown+=ls.length;
   const done=ls.filter(([,k])=>s.done[k]).length;
-  h+=`<div class="row mt2"><h3>${c}</h3><span class="mono">${done} of ${ls.length} done</span></div><div class="tabs">${ls.map(([l,k])=>`<button class="${k==s.cur?'on':''}" onclick="cmPick('${k}')" title="${esc(l.why).slice(0,120)}">${s.done[k]?'✓ ':''}${l.n}</button>`).join('')}</div>`});
+  h+=`<div class="row mt2"><h3>${c}</h3><span class="mono">${done} of ${ls.length} done</span></div><div class="tabs">${ls.map(([l,k])=>`<button class="${k==s.cur?'on':''}" onclick="cmPick('${k}')" title="${s.saved[k]?'In progress. Pick up where you left off. ':''}${esc(l.why).slice(0,120)}">${s.done[k]?'✓ ':s.saved[k]?'◐ ':''}${l.n}</button>`).join('')}</div>`});
  return h||'<p class="t3 mt2">No concept matches. Try a shorter search.</p>'}
 function concepts(){const s=S.cm;cmBoot();
  const nd=ORDER.filter(k=>s.done[k]).length;
@@ -3470,28 +3592,38 @@ function concepts(){const s=S.cm;cmBoot();
  else if(Q){const lbl=s.stage=='test'?'Test out · hardest problem':s.stage=='ladder'?`Problem ${s.li+1} of 4 · easy to hard`:`Similar practice ${s.pi+1} of ${s.pq.length}`;
   let card=probCard();
   if(Q.phase=='solve')card+=`<div class="row mt"><button class="btn pri" id="sub" ${Q.sel==null?'disabled':''} onclick="submitQ()">Submit answer</button><span class="t3">Then you will explain your thinking.</span></div>`;
-  if(Q.phase=='explain')card+=resultBan()+`<div class="mt"><label for="why"><b>How did you think about it?</b> ${AI?'Your tutor reads this to find the exact step that helped or hurt.':'Write it down, then compare with the solution.'}</label>${!AI&&aiNeedsSignIn()?aiGate(1):''}<textarea id="why" class="mt2" ${Q.busy?'disabled':''} placeholder="My first idea was…">${esc(Q.why||'')}</textarea><p class="mono" id="whymsg">${Q.busy?'Reading your reasoning…':''}</p><button class="btn pri" ${Q.busy?'disabled':''} onclick="whySubmit()">${Q.busy?'Thinking…':'Submit reasoning'}</button></div>`;
+  if(Q.phase=='explain')card+=resultBan()+`<div class="mt"><label for="why"><b>How did you think about it?</b> ${AI?'Your tutor reads this to find the exact step that helped or hurt.':'Write it down, then compare with the solution.'}</label>${!AI&&aiNeedsSignIn()?aiGate(1):''}<textarea id="why" class="mt2" ${Q.busy?'disabled':''} placeholder="My first idea was…">${esc(Q.why||'')}</textarea><p class="mono" id="whymsg">${Q.busy?'Reading your reasoning…':''}</p><div class="row"><button class="btn pri" ${Q.busy?'disabled':''} onclick="whySubmit()">${Q.busy?'Thinking…':'Submit reasoning'}</button>${Q.p.d<=3?`<button class="btn gh" ${Q.busy?'disabled':''} onclick="whySkip()">Skip reasoning</button>`:''}</div></div>`;
   if(Q.phase=='feedback')card+=resultBan()+fbHTML()+`<p class="mt"><button class="btn pri" onclick="cmNext()">${s.stage=='test'?(Q.ok?'Concept cleared. Next concept':'Teach me this concept'):s.stage=='ladder'&&!Q.ok?'Help me understand this':'Continue'}</button></p>`;
-  body=`<div class="row"><span class="chip w">${lbl}</span><span class="sp"></span>${timerHTML(Q.phase=='solve'?null:Q.el)}</div><div class="g g2 mt2"><div class="card">${card}</div><div class="card" id="coach">${coachHTML()}</div></div>`}
- return `<div class="ov">Learn</div><h1>${c.name.split(':')[0]}</h1><div class="mt">${body}</div>`}
+  body=`<div class="row"><span class="chip w">${lbl}</span><span class="sp"></span>${qTimer()}</div>${pz(Q.phase=='solve'&&Q.paused,`<div class="g g2 mt2"><div class="card">${card}</div><div class="card" id="coach">${coachHTML()}</div></div>`)}`}
+ // The concept list is always one click away, so the student can switch mid-lesson and come back later.
+ const sw=s.stage=='intro'?'':`<details class="sw mt2" ${LV.open?'open':''} ontoggle="LV.open=this.open"><summary>Switch concept <span class="t3">· your place in <b>${esc(c.n)}</b> is saved</span></summary>${browser}</details>`;
+ return `<div class="ov">Learn</div><h1>${c.name.split(':')[0]}</h1>${sw}<div class="mt">${body}</div>`}
 /* ---------- Trainer and Library ---------- */
 let TR={y:'',c:'',t:'',d:'adaptive'},LB={y:'',c:'',t:'',d:'',q:''},route='dashboard';
 const uniq=k=>[...new Set(ALL.map(p=>p[k]))].sort();
 const selHTML=(obj,k,label,opts,fn)=>`<select aria-label="${label}" style="width:auto" onchange="${obj}.${k}=this.value;${fn}">${opts.map(([v,n])=>`<option value="${v}" ${String(({TR,LB,SV,LV})[obj][k]??'')==String(v)?'selected':''}>${n}</option>`).join('')}</select>`;
-function trPick(p){if(!p&&TR.queue){TR.qi++;if(TR.qi<TR.queue.length)p=byId(TR.queue[TR.qi]);else{TR.qdone=TR.qname;TR.queue=null}}
- if(!p){let P=ALL.filter(x=>(!TR.y||x.year==TR.y)&&(!TR.c||x.contest==TR.c)&&(!TR.t||x.topic==TR.t)&&(TR.d=='adaptive'||x.d==TR.d));if(!P.length){TR.empty=true;Q=null;stopTimer();return}
-  const want=TR.d=='adaptive'?S.ad:+TR.d,rank=x=>(S.seen[x.id]==1?10:0)+(ansOf(x)==null?2.5:0)+Math.abs(x.d-want)+Math.random()*.9;p=P.filter(x=>!Q||x!==Q.p).sort((a,b)=>rank(a)-rank(b))[0]||P[0]}
- TR.empty=false;newQ(p);Q.tr=true}
-function practiceSet(name,ids){if(!ids.length)return;TR.queue=ids;TR.qi=0;TR.qname=name;TR.qdone=null;trPick(byId(ids[0]));if(route=='trainer'){render();window.scrollTo(0,0)}else location.hash='trainer'}
-function trainer(){const f=TR.queue?`<div class="ban info row"><span>Practicing <b>${esc(TR.qname)}</b>, easy to hard · problem ${TR.qi+1} of ${TR.queue.length}</span><span class="sp"></span>${Q?timerHTML(Q.phase=='solve'?null:Q.el):''}<button class="btn sm" onclick="TR.queue=null;trPick();render()">Exit topic practice</button></div>`:`${TR.qdone?`<div class="ban ok">You finished the set for <b>${esc(TR.qdone)}</b>. <a href="#lessons">Pick another topic</a></div>`:''}<div class="row mt">${selHTML('TR','y','Year',[['','All years'],...uniq('year').reverse().map(v=>[v,v])],'trPick();render()')}${selHTML('TR','c','Contest',[['','All contests'],...uniq('contest').map(v=>[v,v])],'trPick();render()')}${selHTML('TR','t','Topic',[['','All topics'],...uniq('topic').map(v=>[v,v])],'trPick();render()')}${selHTML('TR','d','Difficulty',[['adaptive','Adaptive difficulty'],...[1,2,3,4,5].map(v=>[v,'Difficulty '+v])],'trPick();render()')}<span class="sp"></span>${Q?timerHTML(Q.phase=='solve'?null:Q.el):''}</div>`;
+function trPick(p){if(!p&&TR.queue){TR.qi++;if(TR.qi<TR.queue.length)p=byId(TR.queue[TR.qi]);else{TR.qdone=TR.qname;delete TQ[TR.qname];TR.queue=null}}
+ if(!p){let P=ALL.filter(x=>(!TR.y||x.year==TR.y)&&(!TR.c||x.contest==TR.c)&&(!TR.t||x.topic==TR.t)&&(TR.d=='adaptive'||x.d==TR.d));if(!P.length){TR.empty=true;Q=QS.trainer=null;return}
+  const cur=QS.trainer,want=TR.d=='adaptive'?S.ad:+TR.d,rank=x=>(S.seen[x.id]==1?10:0)+(ansOf(x)==null?2.5:0)+Math.abs(x.d-want)+Math.random()*.9;p=P.filter(x=>!cur||x!==cur.p).sort((a,b)=>rank(a)-rank(b))[0]||P[0]}
+ TR.empty=false;newQ(p,'trainer');Q.tr=true;if(APP)save()}
+/* Topic sets: the place in a set the student leaves is remembered (TQ, by topic name) and resumed when they pick it again. */
+let TQ={};
+function trStash(){if(!TR.queue)return;const q=QS.trainer,qi=TR.qi+(q&&q.phase!='solve'?1:0);if(qi<TR.queue.length)TQ[TR.qname]={qi,n:TR.queue.length,at:Date.now()};else delete TQ[TR.qname]}
+function practiceSet(name,ids){if(!ids.length)return;
+ if(!(TR.queue&&TR.qname==name)){trStash();const sv=TQ[name],qi=sv&&sv.n==ids.length&&sv.qi<ids.length?sv.qi:0;delete TQ[name];
+  TR.queue=ids;TR.qi=qi;TR.qname=name;TR.qdone=null;trPick(byId(ids[qi]))}
+ if(route=='trainer'){render();window.scrollTo(0,0)}else location.hash='trainer'}
+function trExit(){trStash();TR.queue=null;trPick();render()}
+const trSwitch=()=>{SV.tab='topics';location.hash='lessons'};
+function trainer(){const f=TR.queue?`<div class="ban info row"><span>Practicing <b>${esc(TR.qname)}</b>, easy to hard · problem ${TR.qi+1} of ${TR.queue.length}</span><span class="sp"></span>${Q?qTimer():''}<button class="btn sm" onclick="trSwitch()">Switch topic</button><button class="btn sm" onclick="trExit()">Exit topic practice</button></div>`:`${TR.qdone?`<div class="ban ok">You finished the set for <b>${esc(TR.qdone)}</b>. <a href="#lessons">Pick another topic</a></div>`:''}<div class="row mt">${selHTML('TR','y','Year',[['','All years'],...uniq('year').reverse().map(v=>[v,v])],'trPick();render()')}${selHTML('TR','c','Contest',[['','All contests'],...uniq('contest').map(v=>[v,v])],'trPick();render()')}${selHTML('TR','t','Topic',[['','All topics'],...uniq('topic').map(v=>[v,v])],'trPick();render()')}${selHTML('TR','d','Difficulty',[['adaptive','Adaptive difficulty'],...[1,2,3,4,5].map(v=>[v,'Difficulty '+v])],'trPick();render()')}<span class="sp"></span>${Q?qTimer():''}</div>`;
  const head=`<div class="ov">Trainer</div><h1>Real AMC problems at your pace</h1><p class="t2">Target times start near 3:30 for easy problems and 7:30 for hard ones, and tighten as you get faster.</p>${f}`;
  if(!Q||!Q.tr)return head+`<div class="card mt"><p>${TR.empty?'No problems match these filters yet.':'Pick filters to begin.'}</p></div>`;
  let card=probCard();
  if(Q.phase=='solve')card+=`<div class="row mt"><button class="btn pri" id="sub" ${Q.sel==null?'disabled':''} onclick="submitQ()">Submit answer</button><button class="btn gh" onclick="trPick();render()">Skip</button></div>`;
  else card+=resultBan()+fbHTML()+`<p class="mt"><button class="btn pri" onclick="trPick();render();window.scrollTo(0,0)">${TR.queue&&TR.qi>=TR.queue.length-1?'Finish this set':'Next problem'}</button></p>`;
- return head+`<div class="g g2 mt"><div class="card">${card}</div><div class="card" id="coach">${coachHTML()}</div></div>`}
+ return head+pz(Q.phase=='solve'&&Q.paused,`<div class="g g2 mt"><div class="card">${card}</div><div class="card" id="coach">${coachHTML()}</div></div>`)}
 function libRows(){const f=LB,q=f.q.toLowerCase(),r=ALL.filter(p=>(!f.y||p.year==f.y)&&(!f.c||p.contest==f.c)&&(!f.t||p.topic==f.t)&&(!f.d||p.d==f.d)&&(!q||((p.text||'')+' '+p.o+' '+p.topic+' '+cite(p)).toLowerCase().includes(q)));
- return `<p class="mono">${r.length} of ${ALL.length} problems</p>`+r.slice(0,LB.n||10).map(p=>`<div class="card mt2"><div class="cite"><b>${cite(p)}</b><span class="chip">${p.topic}</span><span class="chip w">Difficulty ${p.d}</span>${ansOf(p)==null?'<span class="chip">No answer key yet</span>':''}${S.seen[p.id]==1||S.seen[p.id]==2?`<span class="chip ${S.seen[p.id]==1?'o':'r'}">${S.seen[p.id]==1?'Solved':'Missed'}</span>`:''}<span class="sp"></span><a class="btn sm gh" href="${aops(p)}" target="_blank" rel="noopener">AoPS solutions</a><button class="btn sm" onclick="TR.queue=null;trPick(byId('${p.id}'));location.hash='trainer'">Practice this</button></div>${p.text?`<div class="mt2">${M(p.text)}</div>`:shot(p)}</div>`).join('')+(r.length>(LB.n||10)?`<p class="mt"><button class="btn" onclick="LB.n=(LB.n||10)+10;libUp()">Show more</button></p>`:'')}
+ return `<p class="mono">${r.length} of ${ALL.length} problems</p>`+r.slice(0,LB.n||10).map(p=>`<div class="card mt2"><div class="cite"><b>${cite(p)}</b><span class="chip">${p.topic}</span><span class="chip w">Difficulty ${p.d}</span>${ansOf(p)==null?'<span class="chip">No answer key yet</span>':''}${S.seen[p.id]==1||S.seen[p.id]==2?`<span class="chip ${S.seen[p.id]==1?'o':'r'}">${S.seen[p.id]==1?'Solved':'Missed'}</span>`:''}<span class="sp"></span><a class="btn sm gh" href="${aops(p)}" target="_blank" rel="noopener">AoPS solutions</a><button class="btn sm" onclick="trStash();TR.queue=null;trPick(byId('${p.id}'));location.hash='trainer'">Practice this</button></div>${p.text?`<div class="mt2">${M(p.text)}</div>`:shot(p)}</div>`).join('')+(r.length>(LB.n||10)?`<p class="mt"><button class="btn" onclick="LB.n=(LB.n||10)+10;libUp()">Show more</button></p>`:'')}
 function libUp(){const e=$('#libr');if(e){e.innerHTML=libRows();fillImgs()}}
 const needKey=()=>[...new Set(ALL.filter(p=>ansOf(p)==null).map(ckey))].sort().reverse();
 function saveKey(){const c=($('#keyc')||{}).value,v=String(($('#keyv')||{}).value||'').toUpperCase().replace(/[^A-E]/g,''),m=$('#keymsg');if(!c||v.length!=25){if(m)m.textContent='Enter exactly 25 letters from A to E, in problem order.';return}KEYS[c]=v;try{localStorage.setItem('vertex-keys',JSON.stringify(KEYS))}catch(e){}if(window.onVertexSave)onVertexSave();render()}
@@ -3500,38 +3632,41 @@ function library(){const nk=needKey();return `<div class="ov">Library</div><h1>A
  <div class="card mt"><h3>Answer keys</h3><p class="t2">${ALL.filter(p=>ansOf(p)!=null).length} of ${ALL.length} problems are graded automatically, using answer keys entered by the site's editors and keys that have been checked by hand. <a href="#keys">Editors: enter answer keys one test at a time</a>. ${nk.length?`To grade another contest, choose it and type its 25 official answers. They are saved in this browser.`:'Every contest has a key.'}</p>${nk.length?`<div class="row"><select id="keyc" aria-label="Contest" style="width:auto">${nk.map(c=>`<option value="${c}">${c.slice(0,4)} AMC 10${c.slice(4)}</option>`).join('')}</select><input type="text" id="keyv" maxlength="40" placeholder="25 letters, for example ABCDE…" style="max-width:320px" aria-label="Answer key"><button class="btn" onclick="saveKey()">Save key</button></div><p class="mono" id="keymsg"></p>`:''}</div>
  <div class="card mt"><h3>Source and attribution</h3><p class="t2">Every problem here is an actual AMC problem from the contest screenshots supplied for this class, with its original number and wording. Nothing is AI-generated. The MAA owns all AMC problems; for questions about reuse beyond your classroom, write to amcinfo@maa.org.</p></div>`}
 /* ---------- Speed lessons ---------- */
-let SL={i:0};
-function slOpen(i){SL={i,g:SP[i].gen(),si:0,tries:0,done:[],phase:'guided',nSolo:0};render()}
+/* SL is the guided shortcut on screen. Each shortcut the student leaves part-way is kept in SLS (by index) and resumed
+   when they open it again; fresh=1 starts it over with new numbers. DR is the recognition drill. */
+let SL={i:0},SLS={},DR=null;
+function slStash(){if(SL&&SL.g&&SP[SL.i])SLS[SL.i]=frz(SL)}
+function slOpen(i,fresh){slStash();const sv=SLS[i];delete SLS[i];SL=!fresh&&sv?thaw(sv):{i,g:SP[i].gen(),si:0,tries:0,done:[],phase:'guided',nSolo:0};save();render()}
 function slCheck(){const st=SL.g.steps[SL.si],v=num(($('#slin')||{}).value);if(isNaN(v))return;if(Math.abs(v-st.ans)<1e-6){SL.done.push({ok:true});SL.si++;SL.tries=0;SL.msg=''}else if(++SL.tries>=2){SL.done.push({ok:false});SL.si++;SL.tries=0;SL.msg=''}else SL.msg='Not yet. Read the question once more and try again.';
- if(SL.si>=SL.g.steps.length)SL.phase='guided-done';render()}
-function slSolo(){SL.solo=SP[SL.i].gen();SL.phase='solo';SL.t0=Date.now();SL.res=null;render()}
-function slSoloCheck(){const v=num(($('#slsolo')||{}).value);if(isNaN(v))return;const el=(Date.now()-SL.t0)/1000,ok=Math.abs(v-SL.solo.ans)<1e-6;SL.res={ok,el};SL.nSolo=(SL.nSolo||0)+1;if(ok){S.speed[SL.i]=Math.min(S.speed[SL.i]||1e9,Math.round(el));save()}render()}
+ if(SL.si>=SL.g.steps.length)SL.phase='guided-done';save();render()}
+function slSolo(){SL.solo=SP[SL.i].gen();SL.phase='solo';SL.clk=clkNew();SL.paused=false;SL.tt=60;SL.tl='goal';SL.res=null;save();render()}
+function slSoloCheck(){if(SL.paused||SL.res)return;const v=num(($('#slsolo')||{}).value);if(isNaN(v))return;clkSet(SL.clk,false);const el=clkEl(SL.clk),ok=Math.abs(v-SL.solo.ans)<1e-6;SL.res={ok,el};SL.nSolo=(SL.nSolo||0)+1;if(ok)S.speed[SL.i]=Math.min(S.speed[SL.i]||1e9,Math.round(el));save();render()}
 /* ---------- guided shortcuts: after a couple of warm-ups, real AMC 10 problems that need the shortcut ---------- */
 const SL_WARMUPS=2; // timed made-up questions before moving to real problems
 const realOf=i=>(SPREAL[SP[i].n]||[]).map(byId).filter(Boolean).sort((a,b)=>a.d-b.d||a.year-b.year||a.number-b.number);
-function slReal(k){const R=realOf(SL.i);if(!R.length)return;SL.phase='real';SL.ri=Math.max(0,Math.min(k||0,R.length-1));SL.rsel=null;SL.rres=null;SL.rt0=Date.now();render();const c=document.getElementById('slcard');if(c)c.scrollIntoView({block:'start'})}
-function slRealPick(j){if(SL.rres)return;SL.rsel=j;render()}
-function slRealCheck(){if(SL.rres||SL.rsel==null)return;const p=realOf(SL.i)[SL.ri],el=(Date.now()-SL.rt0)/1000,ans=ansOf(p),ok=ans!=null&&SL.rsel===ans;
- if(ans==null)S.seen[p.id]=S.seen[p.id]||3;else{record(p.topic,ok,el,p.d);S.seen[p.id]=ok?1:2;if(ok)S.speed[SL.i]=Math.min(S.speed[SL.i]||1e9,Math.round(el))}
+function slReal(k){const R=realOf(SL.i);if(!R.length)return;SL.phase='real';SL.ri=Math.max(0,Math.min(k||0,R.length-1));SL.rsel=null;SL.rres=null;SL.clk=clkNew();SL.paused=false;SL.tt=180;SL.tl='target';save();render();const c=document.getElementById('slcard');if(c)c.scrollIntoView({block:'start'})}
+function slRealPick(j){if(SL.rres||SL.paused)return;SL.rsel=j;save();render()}
+function slRealCheck(){if(SL.rres||SL.rsel==null||SL.paused)return;clkSet(SL.clk,false);const p=realOf(SL.i)[SL.ri],el=clkEl(SL.clk),ans=ansOf(p),ok=ans!=null&&SL.rsel===ans;let rep=false;
+ if(ans==null)S.seen[p.id]=S.seen[p.id]||3;else{rep=!record(p,ok,el).counted;S.seen[p.id]=ok?1:2;if(ok)S.speed[SL.i]=Math.min(S.speed[SL.i]||1e9,Math.round(el))}
  if(window.onVertexAttempt)onVertexAttempt({problem_id:p.id,choice:L5[SL.rsel],correct:ans==null?null:ok,seconds:Math.round(el)});
- SL.rres={ok,el,ans};save();render()}
+ SL.rres={ok,el,ans,rep};save();render()}
 function soloNext(){const R=realOf(SL.i),next=SL.i<SP.length-1?`<button class="btn gh" onclick="slOpen(${SL.i+1});window.scrollTo(0,0)">Next shortcut</button>`:'';
- if(!R.length)return `<div class="row mt"><button class="btn pri" onclick="slSolo()">Another one</button><button class="btn" onclick="slOpen(${SL.i})">Guided steps again</button>${next}</div><p class="t2 mt2">No real AMC 10 problem in this library is a clean fit for this shortcut yet, so practice uses new numbers.</p>`;
+ if(!R.length)return `<div class="row mt"><button class="btn pri" onclick="slSolo()">Another one</button><button class="btn" onclick="slOpen(${SL.i},1)">Guided steps again</button>${next}</div><p class="t2 mt2">No real AMC 10 problem in this library is a clean fit for this shortcut yet, so practice uses new numbers.</p>`;
  if((SL.nSolo||0)>=SL_WARMUPS)return `<div class="row mt"><button class="btn pri" onclick="slReal(0)">On to real AMC 10 problems (${R.length})</button><button class="btn gh" onclick="slSolo()">One more warm-up</button></div>`;
  return `<div class="row mt"><button class="btn pri" onclick="slSolo()">Next warm-up (${(SL.nSolo||0)+1} of ${SL_WARMUPS})</button><button class="btn gh" onclick="slReal(0)">Skip to real AMC 10 problems</button></div>`}
-function realHTML(){const R=realOf(SL.i),p=R[SL.ri],sp=SP[SL.i],r=SL.rres,last=SL.ri>=R.length-1;
+function realHTML(){const R=realOf(SL.i),p=R[SL.ri],sp=SP[SL.i],r=SL.rres,last=SL.ri>=R.length-1;if(!SL.clk){SL.clk=clkNew();SL.tt=180;SL.tl='target'}
  const chs=`<div class="chs${p.text&&p.choices.some(c=>c.length>32)?' long':''}${p.text?'':' let'}" role="group" aria-label="Answer choices">${L5.split('').map((l,i)=>{const cls=r?(r.ans!=null&&i==r.ans?'ok':i==SL.rsel?(r.ans==null?'sel':'bad'):''):(i==SL.rsel?'sel':'');return `<button class="ch ${cls}" ${r?'disabled':''} onclick="slRealPick(${i})" aria-label="Choice ${l}"><b>${l}</b>${p.text?`<span>${M(p.choices[i])}</span>`:''}</button>`}).join('')}</div>`;
  const res=!r?`<div class="row mt"><button class="btn pri" ${SL.rsel==null?'disabled':''} onclick="slRealCheck()">Check answer</button><span class="mono">Aim to spot the shortcut in the first 20 seconds</span></div>`:
   (r.ans==null?`<div class="ban note"><b>Recorded: (${L5[SL.rsel]}).</b> The answer key for the ${p.year} ${p.contest} has not been entered yet, so this one cannot be graded. Compare with the AoPS solutions.`:`<div class="ban ${r.ok?'ok':'bad'}"><b>${r.ok?'Correct in '+mmss(r.el)+'.':'Not quite. The answer is ('+L5[r.ans]+')'+(p.text?' '+M(p.choices[r.ans]):'')+'.'}</b> ${r.ok?(r.el<=180?'That is contest pace.':'Right answer. Next time, look for the shortcut sooner.'):`Look for where <b>${sp.n.toLowerCase()}</b> cuts the work, then check the solutions.`}`)+
-  `<div class="mt2">${aopsLink(p)}</div></div><div class="row mt">${last?`<span class="chip o">All ${R.length} real problems for this shortcut done</span>`:`<button class="btn pri" onclick="slReal(${SL.ri+1})">Next real problem (${SL.ri+2} of ${R.length})</button>`}${last&&SL.i<SP.length-1?`<button class="btn pri" onclick="slOpen(${SL.i+1});window.scrollTo(0,0)">Next shortcut</button>`:''}<button class="btn gh" onclick="slOpen(${SL.i})">Guided steps again</button></div>`;
- return `<div class="ov">Real AMC 10 problem ${SL.ri+1} of ${R.length}</div><div class="cite mt2"><b>${cite(p)}</b><span class="chip">${p.topic}</span><span class="chip w">Difficulty ${p.d} of 5</span></div>
+  `<div class="mt2">${aopsLink(p)}</div></div><div class="row mt">${last?`<span class="chip o">All ${R.length} real problems for this shortcut done</span>`:`<button class="btn pri" onclick="slReal(${SL.ri+1})">Next real problem (${SL.ri+2} of ${R.length})</button>`}${last&&SL.i<SP.length-1?`<button class="btn pri" onclick="slOpen(${SL.i+1});window.scrollTo(0,0)">Next shortcut</button>`:''}<button class="btn gh" onclick="slOpen(${SL.i},1)">Guided steps again</button></div>${r.rep?'<p class="mono mt2">You answered this problem before, so it was not counted again in your stats.</p>':''}`;
+ return `<div class="row"><div class="ov">Real AMC 10 problem ${SL.ri+1} of ${R.length}</div><span class="sp"></span>${r?tmDone(r.el,SL.tt,SL.tl):tmLive(SL)}</div>${pz(!r&&SL.paused,`<div class="cite mt2"><b>${cite(p)}</b><span class="chip">${p.topic}</span><span class="chip w">Difficulty ${p.d} of 5</span></div>
  <div class="ban info"><b>Use: ${sp.n}.</b> How to spot it: ${M(sp.cue)}</div>
- ${p.text?`<div class="ptext">${M(p.text)}</div>${FIG[p.id]?`<div class="fig"><img src="${FIG[p.id]}" alt="Diagram for ${cite(p)}"></div>`:''}`:shot(p)}${chs}${res}`}
+ ${p.text?`<div class="ptext">${M(p.text)}</div>${FIG[p.id]?`<div class="fig"><img src="${FIG[p.id]}" alt="Diagram for ${cite(p)}"></div>`:''}`:shot(p)}${chs}${res}`)}`}
 function guided(){if(!SL.g)SL={i:SL.i||0,g:SP[SL.i||0].gen(),si:0,tries:0,done:[],phase:'guided'};const p=SP[SL.i],g=SL.g;
  let prac='';
- if(SL.phase=='real')prac=realHTML();else if(SL.phase=='solo'){const r=SL.res;prac=`<div class="ov">${realOf(SL.i).length?`Warm-up ${Math.min((SL.nSolo||0)+(SL.res?0:1),SL_WARMUPS)} of ${SL_WARMUPS}, on the clock · then real AMC 10 problems`:'Now alone, on the clock'}</div><p class="ptext">${M(SL.solo.q)}</p>${r?`<div class="ban ${r.ok?'ok':'bad'}"><b>${r.ok?'Correct in '+mmss(r.el)+'.':'Not quite. The answer is '+SL.solo.ans+'.'}</b> ${r.ok?(r.el<=60?'That is contest speed.':'Right answer. Try another and aim for under 1:00.'):'Walk through it with the steps again, then retry.'}</div>${soloNext()}`:`<div class="row mt2"><input type="text" inputmode="decimal" id="slsolo" style="max-width:200px" aria-label="Your answer" onkeydown="if(event.key=='Enter')slSoloCheck()"><button class="btn pri" onclick="slSoloCheck()">Check</button><span class="mono">Goal: under 1:00</span></div>`}`}
- else{prac=`<div class="ov">Do it with me</div><p class="ptext">${M(g.q)}</p><div class="steps">${g.steps.slice(0,SL.si).map((st,i)=>`<div class="step"><div>${M(st.ask)}</div><div class="why"><b>${SL.done[i].ok?'✓ Right.':'Answer:'}</b> ${M(st.why)}</div></div>`).join('')}</div>${SL.phase=='guided-done'?`<div class="ban ok"><b>That is the whole method.</b> ${g.steps.length} small steps, no heavy arithmetic.</div><p class="mt"><button class="btn pri" onclick="slSolo()">Try one alone, timed</button> <button class="btn" onclick="slOpen(${SL.i})">Guided again with new numbers</button>${realOf(SL.i).length?` <button class="btn gh" onclick="slReal(0)">Skip to real AMC 10 problems</button>`:''}</p>`:`<div class="step mt2"><div><b>Step ${SL.si+1} of ${g.steps.length}.</b> ${M(g.steps[SL.si].ask)}</div><div class="row mt2"><input type="text" inputmode="decimal" id="slin" style="max-width:200px" aria-label="Your answer" onkeydown="if(event.key=='Enter')slCheck()"><button class="btn pri" onclick="slCheck()">Check</button></div>${SL.msg?`<p class="t2">${SL.msg}</p>`:''}</div>`}`}
- const d=SL.dr;
+ if(SL.phase=='real')prac=realHTML();else if(SL.phase=='solo'){const r=SL.res;if(!SL.clk){SL.clk=clkNew();SL.tt=60;SL.tl='goal'}prac=`<div class="row"><div class="ov">${realOf(SL.i).length?`Warm-up ${Math.min((SL.nSolo||0)+(SL.res?0:1),SL_WARMUPS)} of ${SL_WARMUPS}, on the clock · then real AMC 10 problems`:'Now alone, on the clock'}</div><span class="sp"></span>${r?tmDone(r.el,SL.tt,SL.tl):tmLive(SL)}</div>${pz(!r&&SL.paused,`<p class="ptext">${M(SL.solo.q)}</p>${r?`<div class="ban ${r.ok?'ok':'bad'}"><b>${r.ok?'Correct in '+mmss(r.el)+'.':'Not quite. The answer is '+SL.solo.ans+'.'}</b> ${r.ok?(r.el<=60?'That is contest speed.':'Right answer. Try another and aim for under 1:00.'):'Walk through it with the steps again, then retry.'}</div>${soloNext()}`:`<div class="row mt2"><input type="text" inputmode="decimal" id="slsolo" style="max-width:200px" aria-label="Your answer" onkeydown="if(event.key=='Enter')slSoloCheck()"><button class="btn pri" onclick="slSoloCheck()">Check</button><span class="mono">Goal: under 1:00</span></div>`}`)}`}
+ else{prac=`<div class="ov">Do it with me</div><p class="ptext">${M(g.q)}</p><div class="steps">${g.steps.slice(0,SL.si).map((st,i)=>`<div class="step"><div>${M(st.ask)}</div><div class="why"><b>${SL.done[i].ok?'✓ Right.':'Answer:'}</b> ${M(st.why)}</div></div>`).join('')}</div>${SL.phase=='guided-done'?`<div class="ban ok"><b>That is the whole method.</b> ${g.steps.length} small steps, no heavy arithmetic.</div><p class="mt"><button class="btn pri" onclick="slSolo()">Try one alone, timed</button> <button class="btn" onclick="slOpen(${SL.i},1)">Guided again with new numbers</button>${realOf(SL.i).length?` <button class="btn gh" onclick="slReal(0)">Skip to real AMC 10 problems</button>`:''}</p>`:`<div class="step mt2"><div><b>Step ${SL.si+1} of ${g.steps.length}.</b> ${M(g.steps[SL.si].ask)}</div><div class="row mt2"><input type="text" inputmode="decimal" id="slin" style="max-width:200px" aria-label="Your answer" onkeydown="if(event.key=='Enter')slCheck()"><button class="btn pri" onclick="slCheck()">Check</button></div>${SL.msg?`<p class="t2">${SL.msg}</p>`:''}</div>`}`}
+
  const cats=[...new Set(SP.map(x=>x.c))],nd=Object.keys(S.speed).length;
  return `<p class="mono mt">${nd} of ${SP.length} shortcuts practiced, across ${cats.length} areas.</p>
  ${cats.map(c=>`<div class="ov mt2">${c}</div><div class="tabs" role="tablist">${SP.map((x,i)=>[x,i]).filter(([x])=>x.c==c).map(([x,i])=>`<button class="${i==SL.i?'on':''}" onclick="slOpen(${i});window.scrollTo(0,0)">${S.speed[i]?'✓ ':''}${x.n}</button>`).join('')}</div>`).join('')}
@@ -3540,16 +3675,18 @@ function guided(){if(!SL.g)SL={i:SL.i||0,g:SP[SL.i||0].gen(),si:0,tries:0,done:[
  <div class="g two mt"><div class="card slow"><div class="row"><h3>The slow way</h3><span class="sp"></span><span class="chip r">${p.slowT}</span></div><ol>${p.slow.map(x=>`<li>${M(x)}</li>`).join('')}</ol></div><div class="card fast"><div class="row"><h3>The fast way</h3><span class="sp"></span><span class="chip o">${p.fastT}</span></div><ol>${p.fast.map(x=>`<li>${M(x)}</li>`).join('')}</ol></div></div>
  <div class="ban info"><b>How to spot it:</b> ${M(p.cue)}</div></div>
  <div class="card mt2" id="slcard">${prac}</div>`}
-function drillView(){const d=SL.dr;return `<div class="card mt"><h2>Recognition drill</h2>${!d?`<p class="t2">After the lessons: ${DRN} new problems, drawn at random from all ${DRL.length} shortcuts. Do not solve them. Just pick which shortcut fits, as fast as you can.</p><button class="btn pri" onclick="drStart()">Start the drill</button>`:d.i>=d.q.length?`<p class="big">${d.s} of ${d.q.length}</p><p class="t2">Average ${mmss(d.t/d.q.length)} per problem. ${d.s>=Math.ceil(d.q.length*.75)?'You are recognizing types quickly.':'Revisit the lessons you missed, then try again.'}</p><button class="btn pri" onclick="drStart()">Try again</button>`:`<div class="mono">Problem ${d.i+1} of ${d.q.length}</div><p class="ptext">${M(DRL[d.q[d.i]][0])}</p><div class="row mt2">${d.o.map(k=>`<button class="btn" onclick="drAns(${k})">${SP[k].n}</button>`).join('')}</div>${d.fb?`<p class="ban ${d.fb[0]?'ok':'bad'}">${d.fb[1]}</p>`:''}`}</div>`}
+function drillView(){const d=DR;return `<div class="card mt"><h2>Recognition drill</h2>${!d?`<p class="t2">After the lessons: ${DRN} new problems, drawn at random from all ${DRL.length} shortcuts. Do not solve them. Just pick which shortcut fits, as fast as you can.</p><button class="btn pri" onclick="drStart()">Start the drill</button>`:d.i>=d.q.length?`<p class="big">${d.s} of ${d.q.length}</p><p class="t2">Average ${mmss(d.t/d.q.length)} per problem. ${d.s>=Math.ceil(d.q.length*.75)?'You are recognizing types quickly.':'Revisit the lessons you missed, then try again.'}</p><button class="btn pri" onclick="drStart()">Try again</button>`:`<div class="mono">Problem ${d.i+1} of ${d.q.length}</div><p class="ptext">${M(DRL[d.q[d.i]][0])}</p><div class="row mt2">${d.o.map(k=>`<button class="btn" onclick="drAns(${k})">${SP[k].n}</button>`).join('')}</div>${d.fb?`<p class="ban ${d.fb[0]?'ok':'bad'}">${d.fb[1]}</p>`:''}`}</div>`}
 let SV={tab:'topics',cat:'',lvl:'',q:''};
 const REL={'Complex numbers':'Quadratics and factoring','Trigonometry and the law of cosines':'Pythagorean theorem and special right triangles','Chinese remainder theorem and repeating conditions':'Modular arithmetic and remainders',"Ptolemy's theorem":'Inscribed angles and cyclic quadrilaterals','Expected value':'Basic probability','Logarithms':'Exponents and radicals','Pigeonhole principle':'Optimization: largest and smallest','Power of a point':'Circles: radius, chords, tangents','Telescoping sums and products':'Arithmetic sequences and series','Systems of equations':'Linear equations and word problems','Absolute value and inequalities':'Quadratics and factoring','Generating functions and sums of dice':'Dice, coins and cards','Geometric probability':'Basic probability','Counting divisors':'Primes and divisibility rules'};
 const byEase=(a,b)=>(ansOf(a)==null)-(ansOf(b)==null)||a.d-b.d||a.number-b.number||b.year-a.year;
 function topicIds(i){const t=TOP.topics[i];let P=ALL.filter(p=>p.tags.includes(i)).sort(byEase);if(P.length<6&&REL[t.n]){const j=TOP.topics.findIndex(x=>x.n==REL[t.n]);P=P.concat(ALL.filter(p=>p.tags.includes(j)&&!P.includes(p)).sort(byEase).slice(0,12-P.length))}return P.map(p=>p.id)}
 const catIds=c=>ALL.filter(p=>p.tags.some(i=>TOP.topics[i].c==c)).sort(byEase).map(p=>p.id);
 function practiceTopic(i){practiceSet(TOP.topics[i].n,topicIds(i))}
+// "Resume" on a topic the student left part-way (or is in now), with their place in it.
+const tqLabel=n=>{const cur=TR.queue&&TR.qname==n?{qi:TR.qi,n:TR.queue.length}:TQ[n];return cur?`Resume · ${cur.qi+1} of ${cur.n}`:'Practice'};
 function practiceCat(ci){practiceSet(TOP.cats[ci]+' (whole category)',catIds(TOP.cats[ci]))}
 function topicList(){const q=SV.q.toLowerCase();let h='',shown=0;TOP.cats.forEach((c,ci)=>{if(SV.cat&&SV.cat!=c)return;const ts=TOP.topics.map((t,i)=>[t,i]).filter(([t])=>t.c==c&&(!SV.lvl||t.l==SV.lvl)&&(!q||(t.n+' '+t.c+' '+t.tip).toLowerCase().includes(q)));if(!ts.length)return;shown+=ts.length;
-  h+=`<div class="row mt"><h2>${c}</h2><span class="mono">${ts.length} topics · ${catIds(c).length} problems</span><span class="sp"></span><button class="btn sm" onclick="practiceCat(${ci})">Practice the whole category</button></div><div class="g two mt2">${ts.map(([t,i])=>`<div class="card"><div class="row"><h3>${t.n}</h3><span class="sp"></span><span class="chip ${t.l<3?'o':t.l==3?'b':t.l==4?'w':'r'}">Level ${t.l}</span></div><p class="t2" style="font-size:15px">${M(t.tip)}</p><div class="row"><span class="mono">${t.k} AMC 10 problem${t.k==1?'':'s'}${t.k<6&&REL[t.n]?' · rare on the AMC 10, so related problems are added':''}</span><span class="sp"></span><button class="btn sm pri" onclick="practiceTopic(${i})">Practice</button></div></div>`).join('')}</div>`});
+  h+=`<div class="row mt"><h2>${c}</h2><span class="mono">${ts.length} topics · ${catIds(c).length} problems</span><span class="sp"></span><button class="btn sm" onclick="practiceCat(${ci})">Practice the whole category</button></div><div class="g two mt2">${ts.map(([t,i])=>`<div class="card"><div class="row"><h3>${t.n}</h3><span class="sp"></span><span class="chip ${t.l<3?'o':t.l==3?'b':t.l==4?'w':'r'}">Level ${t.l}</span></div><p class="t2" style="font-size:15px">${M(t.tip)}</p><div class="row"><span class="mono">${t.k} AMC 10 problem${t.k==1?'':'s'}${t.k<6&&REL[t.n]?' · rare on the AMC 10, so related problems are added':''}</span><span class="sp"></span><button class="btn sm pri" onclick="practiceTopic(${i})">${tqLabel(t.n)}</button></div></div>`).join('')}</div>`});
  return `<p class="mono mt2">${shown} of ${TOP.topics.length} topics</p>`+(h||'<p class="t3">No topics match. Try a shorter search.</p>')}
 function topUp(){const e=$('#tlist');if(e)e.innerHTML=topicList()}
 function lessons(){const tabs=[['topics','Topic library'],['guided','Guided shortcuts'],['drill','Recognition drill']];
@@ -3559,14 +3696,14 @@ function lessons(){const tabs=[['topics','Topic library'],['guided','Guided shor
 <div class="tabs mt">${tabs.map(([k,n])=>`<button class="${SV.tab==k?'on':''}" onclick="SV.tab='${k}';render()">${n}</button>`).join('')}</div>
  ${SV.tab=='guided'?guided():SV.tab=='drill'?drillView():`<div class="row mt"><input type="text" id="tq" placeholder="Search topics, for example Vieta or remainder" style="max-width:340px" value="${esc(SV.q)}" oninput="SV.q=this.value;topUp()" aria-label="Search topics">${selHTML('SV','cat','Category',[['','All categories'],...TOP.cats.map(c=>[c,c])],'topUp()')}${selHTML('SV','lvl','Level',[['','All levels'],[1,'Level 1 · basics'],[2,'Level 2'],[3,'Level 3 · mid-contest'],[4,'Level 4'],[5,'Level 5 · hardest']],'topUp()')}</div><p class="t2 mt2">Each topic gives the fast move, then real AMC 10 problems on it from easy to hard. Problems were matched to topics by their wording, so an occasional mismatch is possible.</p><div id="tlist">${topicList()}</div>`}`}
 const DRN=8; // questions per run, drawn at random from the full pool so every shortcut comes up over time
-function drStart(){SL.dr={i:0,s:0,t:0,q:DRL.map((_,i)=>i).sort(()=>Math.random()-.5).slice(0,DRN)};drNext()}
-function drNext(){const d=SL.dr;if(d.i<d.q.length){const c=DRL[d.q[d.i]][1],o=[c];
+function drStart(){DR={i:0,s:0,t:0,q:DRL.map((_,i)=>i).sort(()=>Math.random()-.5).slice(0,DRN)};drNext()}
+function drNext(){const d=DR;if(d.i<d.q.length){const c=DRL[d.q[d.i]][1],o=[c];
   // two decoys from the same area, so the choice tests real recognition rather than topic spotting
   const near=SP.map((x,i)=>i).filter(i=>i!=c&&SP[i].c==SP[c].c).sort(()=>Math.random()-.5);
   while(o.length<3&&near.length)o.push(near.pop());
   while(o.length<4){const k=rnd(0,SP.length-1);if(!o.includes(k))o.push(k)}
-  d.o=o.sort(()=>Math.random()-.5);d.t0=Date.now()}render()}
-function drAns(k){const d=SL.dr,el=(Date.now()-d.t0)/1000,c=DRL[d.q[d.i]][1],ok=k==c;d.t+=el;if(ok)d.s++;d.fb=[ok,(ok?'Correct: ':'That one was ')+SP[c].n+'. '+mmss(el)+'.'];d.i++;drNext()}
+  d.o=o.sort(()=>Math.random()-.5);d.clk=clkNew()}save();render()}
+function drAns(k){const d=DR;if(!d||d.i>=d.q.length)return;clkSet(d.clk,false);const el=clkEl(d.clk),c=DRL[d.q[d.i]][1],ok=k==c;d.t+=el;if(ok)d.s++;d.fb=[ok,(ok?'Correct: ':'That one was ')+SP[c].n+'. '+mmss(el)+'.'];d.i++;drNext()}
 /* ---------- Dashboard ---------- */
 function dashboard(){const acc=S.solved?Math.round(100*S.correct/S.solved):0,s=S.cm,nd=ORDER.filter(k=>s.done[k]).length;
  return `<div class="ov">Dashboard</div><h1>Your progress</h1>
@@ -3576,17 +3713,21 @@ function dashboard(){const acc=S.solved?Math.round(100*S.correct/S.solved):0,s=S
  <h3 class="mt">Accuracy by topic</h3>${Object.keys(S.topics).length?Object.entries(S.topics).map(([k,t])=>`<div class="mt2"><div class="row"><span>${k}</span><span class="sp"></span><span class="mono">${Math.round(100*t.c/t.n)}% of ${t.n}</span></div><div class="bar ${t.c/t.n>=.7?'ok':''}"><i style="width:${100*t.c/t.n}%"></i></div></div>`).join(''):'<p class="t3">Solve a few problems to see strengths and weak spots.</p>'}
  <h3 class="mt">Speed shortcuts</h3><p class="t2">${Object.keys(S.speed).length} of ${SP.length} guided shortcuts practiced · ${TOP.topics.length} topics and ${ALL.length} problems available.</p></div></div>
  <p class="mt"><button class="btn gh" onclick="resetAll(this)">Reset progress</button></p>`}
-function resetAll(b){if(b.dataset.s){try{localStorage.removeItem('vertex-v3')}catch(e){}b.disabled=true;Promise.resolve(window.onVertexReset&&onVertexReset()).catch(()=>{}).finally(()=>location.reload())}else{b.dataset.s=1;b.textContent='Click again to confirm reset'}}
+function resetAll(b){if(b.dataset.s){b.disabled=true;vertexUse(blankState());Promise.resolve(window.onVertexReset&&onVertexReset()).catch(()=>{}).finally(()=>{NOSAVE=true;try{localStorage.removeItem('vertex-v3')}catch(e){}location.reload()})}else{b.dataset.s=1;b.textContent='Click again to confirm reset'}}
 /* ---------- routing ---------- */
 const views={dashboard,concepts,trainer,lessons,library,probLesson:()=>probLessonHTML()};
-function render(){document.querySelectorAll('.side a').forEach(a=>a.classList.toggle('on',a.dataset.r==route));const m=$('#main');if(!m)return;m.innerHTML=views[route]?views[route]():'';draw();fillImgs();const c=$('#chat');if(c)c.scrollTop=c.scrollHeight}
+function render(){document.querySelectorAll('.side a').forEach(a=>a.classList.toggle('on',a.dataset.r==route));const m=$('#main');if(!m)return;m.innerHTML=views[route]?views[route]():'';syncClocks();draw();fillImgs();const c=$('#chat');if(c)c.scrollTop=c.scrollHeight}
 function go(){const h=location.hash.slice(1),r=views[h]?h:'dashboard',was=route;
  if(r!=='probLesson')prevRoute=r;
  route=r;
+ if(r=='concepts'||r=='trainer')Q=QS[r]||null;
  if(r=='concepts'&&(was!='concepts'||!S.cm.cur))cmEnter();
  if(r=='trainer'&&!(Q&&Q.tr))trPick();
- if(r!='concepts'&&r!='trainer'&&r!='probLesson')stopTimer();
- render()}
+ render();if(was!==r&&APP)save()}
+// Start where the student left off (this browser's copy; cloud.js then merges in the account's copy).
+liveRestore();LAST.pos=cmPos();LAST.live=JSON.stringify(liveSnap());APP=true;
+addEventListener('pagehide',()=>save());
+addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')save()});
 addEventListener('hashchange',go);go();
 (function load(u){if(!u.length)return;const s=document.createElement('script');s.src=u[0];s.async=true;s.onerror=()=>load(u.slice(1));document.head.appendChild(s)})(['https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js','https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.js','https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js']);
 
