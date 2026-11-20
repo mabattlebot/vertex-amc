@@ -5,8 +5,7 @@
 (function () {
   const CFG = window.VERTEX_SUPABASE || {};
   const LINK = document.getElementById('navProfile');
-  const blank = () => ({ solved: 0, correct: 0, fast: 0, time: 0, ad: 2, topics: {}, seen: {}, speed: {},
-    cm: { done: {}, cur: null, stage: 'intro', step: 0, li: 0, pq: [], pi: 0, miss: 0 } });
+  const blank = () => blankState(); // the app's empty progress (defined in index.html)
 
   if (!CFG.url || !CFG.key || !window.supabase) {
     views.profile = () => `<div class="ov">Profile</div><h1>Accounts are not available</h1>
@@ -27,46 +26,53 @@
     status: '', lastSync: null, history: null };
   let timer = null, pushing = null;
 
-  const hasProgress = s => !!s && ((s.solved || 0) > 0 || Object.keys(s.seen || {}).length > 0 ||
-    Object.keys((s.cm || {}).done || {}).length > 0);
-
-  // Combine progress saved in this browser with progress saved in the account.
-  // The copy with more answered problems is the base; solved problems and finished lessons from the other are added.
-  function merge(cloud, local) {
-    const base = (local.solved || 0) > (cloud.solved || 0) ? local : cloud, other = base === local ? cloud : local;
-    const m = JSON.parse(JSON.stringify(base));
-    m.seen = m.seen || {};
-    for (const [id, v] of Object.entries(other.seen || {})) {
-      const c = m.seen[id];
-      if (c == null || (v === 1 && c !== 1) || (c === 3 && v === 2)) m.seen[id] = v;
-    }
-    m.cm = m.cm || {};
-    m.cm.done = Object.assign({}, (other.cm || {}).done || {}, m.cm.done || {});
-    m.speed = Object.assign({}, other.speed || {}, m.speed || {});
-    return m;
+  /* Syncing. The app merges two copies of the progress (vertexMerge in index.html): every answered problem keeps its
+     first answer, so the totals never double-count, and the more recently used copy decides where the student is.
+     Every save reads the account's copy first and merges it in, so two devices never overwrite each other's work.
+     The account's copy is also read when the tab becomes visible again and every couple of minutes while it is open. */
+  let chain = Promise.resolve();
+  function absorb(data) {
+    if (!data) return;
+    if (window.vertexCapture) vertexCapture();
+    if (data.state && typeof data.state === 'object') vertexUse(vertexMerge(S, data.state));
+    KEYS = Object.assign({}, data.keys || {}, KEYS);
+    try { localStorage.setItem('vertex-keys', JSON.stringify(KEYS)); } catch (e) {}
   }
-  function useState(next) {
-    const b = blank();
-    S = Object.assign(b, next || {});
-    S.cm = Object.assign(b.cm, (next && next.cm) || {});
-  }
-
-  async function push() {
-    if (!P.user) return;
-    clearTimeout(timer);
-    const row = { user_id: P.user.id, state: S, keys: KEYS, updated_at: new Date().toISOString() };
-    pushing = sb.from('progress').upsert(row).then(({ error }) => {
-      if (error) { P.status = 'Not saved to your account: ' + error.message; console.warn('Vertex sync:', error); }
-      else { P.status = 'Saved to your account'; P.lastSync = new Date(); }
-      pushing = null; if (route === 'profile') render();
-    });
-    return pushing;
+  const read = uid => sb.from('progress').select('state, keys').eq('user_id', uid).maybeSingle();
+  // replace = true writes this copy as is (used by "Reset progress"), without merging the account's copy in.
+  function push(replace) {
+    if (!P.user) return Promise.resolve();
+    clearTimeout(timer); timer = null;
+    const uid = P.user.id;
+    const job = chain.then(async () => {
+      if (!P.user || P.user.id !== uid) return;
+      if (!replace) { const { data, error } = await read(uid); if (error) throw error; absorb(data); }
+      if (window.vertexCapture) vertexCapture();
+      clearTimeout(timer); timer = null; // vertexCapture saves, which schedules another push: this one covers it
+      const { error } = await sb.from('progress').upsert({ user_id: uid, state: S, keys: KEYS, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      P.status = 'Saved to your account'; P.lastSync = new Date();
+    }).catch(e => { P.status = 'Not saved to your account: ' + (e.message || e); console.warn('Vertex sync:', e); })
+      .finally(() => { if (pushing === job) pushing = null; if (route === 'profile') render(); });
+    chain = pushing = job;
+    return job;
   }
   function schedule() {
     if (!P.user) return;
     P.status = 'Saving…';
     clearTimeout(timer);
     timer = setTimeout(push, 1500);
+  }
+  let lastPull = 0;
+  function pull() {
+    if (!P.user || timer || pushing || document.visibilityState !== 'visible' || Date.now() - lastPull < 10000) return;
+    lastPull = Date.now();
+    const uid = P.user.id;
+    chain = chain.then(async () => {
+      const { data, error } = await read(uid);
+      if (error) throw error;
+      if (P.user && P.user.id === uid && !timer) { absorb(data); P.lastSync = new Date(); }
+    }).catch(e => console.warn('Vertex sync:', e));
   }
 
   // Hooks the main app calls.
@@ -78,31 +84,27 @@
   };
   window.onVertexReset = async () => {
     if (!P.user) return;
-    useState(blank());
-    await push();
+    vertexUse(blank());
+    await push(true);
     await sb.from('attempts').delete().eq('user_id', P.user.id);
   };
-  addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && timer) push(); });
+  addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { if (timer) push(); }
+    else pull();
+  });
+  addEventListener('focus', pull);
+  setInterval(pull, 120000);
 
-  // After sign-in: bring the account's progress into the app.
+  // After sign-in: bring the account's progress into the app and save the combined copy back.
   async function adopt() {
     P.status = 'Loading your saved progress…'; if (route === 'profile') render();
-    const { data, error } = await sb.from('progress').select('state, keys').eq('user_id', P.user.id).maybeSingle();
+    const { data, error } = await read(P.user.id);
     if (error) {
       P.status = 'Could not load your saved progress: ' + error.message;
       console.warn('Vertex sync:', error); render(); return;
     }
-    if (!data) { await push(); render(); return; }
-    const cloud = data.state || {}, local = S;
-    let next;
-    if (!hasProgress(local)) next = cloud;
-    else if (!hasProgress(cloud) || JSON.stringify(cloud) === JSON.stringify(local)) next = local;
-    else next = merge(cloud, local);
-    useState(next);
-    KEYS = Object.assign({}, data.keys || {}, KEYS);
-    try { localStorage.setItem('vertex-keys', JSON.stringify(KEYS)); } catch (e) {}
-    save();
-    P.status = 'Saved to your account'; P.lastSync = new Date();
+    absorb(data);
+    await push(true);
     render();
   }
 
@@ -170,9 +172,11 @@
     signOut: () => run(async () => {
       if (timer || pushing) await (pushing || push());
       await sb.auth.signOut();
+      P.user = null; // stop syncing before clearing this browser's copy
       // Clear this browser's copy so the next person on this computer starts fresh. It stays in the account.
       try { localStorage.removeItem('vertex-v3'); localStorage.removeItem('vertex-keys'); } catch (e) {}
-      useState(blank()); KEYS = {}; P.history = null; P.status = ''; P.lastSync = null;
+      vertexUse(blank()); KEYS = {}; P.history = null; P.status = ''; P.lastSync = null;
+      try { localStorage.removeItem('vertex-v3'); } catch (e) {}
       say('Signed out. Your progress is saved in your account.');
     }),
     syncNow: () => run(async () => { await push(); say(''); })
