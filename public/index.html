@@ -31,6 +31,7 @@ button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-vis
 .chs{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:16px}.chs.long{grid-template-columns:1fr}.chs.let{grid-template-columns:repeat(5,minmax(0,1fr))}.chs.let .ch{justify-content:center;padding:11px 6px}.fig.shot{justify-content:flex-start;overflow-x:auto}.fig.shot img{width:100%;max-width:958px;min-height:40px;padding:8px}
 .ch{display:flex;gap:12px;align-items:center;padding:11px 14px;border:1px solid var(--bd);border-radius:12px;background:var(--sf);color:var(--ink);font:inherit;text-align:left;cursor:pointer;min-width:0}.ch b{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--sub);font-size:13px;flex:none}
 .ch.sel{border-color:var(--br);box-shadow:inset 0 0 0 1px var(--br);background:var(--brs)}.ch.sel b{background:var(--br);color:#fff}.ch.ok{border-color:var(--ok);box-shadow:inset 0 0 0 1px var(--ok);background:var(--oks)}.ch.ok b{background:var(--ok);color:#fff}.ch.bad{border-color:var(--no);box-shadow:inset 0 0 0 1px var(--no);background:var(--nos)}.ch.bad b{background:var(--no);color:#fff}
+.pr-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:12px}.pr-opt{display:flex;flex-direction:column;gap:5px;text-align:left;padding:14px 16px;border:1px solid var(--bd);border-radius:12px;background:var(--sf);color:var(--ink);font:inherit;cursor:pointer}.pr-opt:hover:not(:disabled){border-color:var(--br);background:var(--brs)}.pr-opt b{font-size:15.5px}.pr-opt span{color:var(--t2);font-size:13.5px;line-height:1.45}.pr-opt em{font-style:normal;font-size:12.5px;color:var(--t3)}.pr-opt:disabled{opacity:.6;cursor:not-allowed}
 .ban{padding:14px 16px;border-radius:12px;margin-top:14px}.ban.ok{background:var(--oks)}.ban.bad{background:var(--nos)}.ban.info{background:var(--brs)}.ban.note{background:var(--sub)}
 .steps{display:grid;gap:10px;margin-top:12px}.step{border-left:3px solid var(--br);padding:6px 0 6px 14px}.step .why{color:var(--t2);font-size:14.5px}
 .dots{display:flex;gap:5px;flex-wrap:wrap}.dots i{width:26px;height:6px;border-radius:9px;background:var(--sub)}.dots i.d{background:var(--ok)}.dots i.c{background:var(--br)}
@@ -3240,6 +3241,10 @@ function coachFor(q){if(!q||(CO.mode=='problem'&&CO.q===q))return;setCoach('prob
 function setCoachCtx(){const c=S.cm.cur&&CON[S.cm.cur];
  if(CO.mode=='lesson'&&c){CO.ctx=`The student is in a lesson on "${c.name}". Key ideas: ${c.ideas.map(i=>i.t+': '+i.h).join(' | ')}. Worked example: ${c.ex.q}`;CO.quick=['Explain this idea a different way','Show me another worked example','Ask me a quick check question']}
  else if(CO.mode=='problem'&&Q){CO.ctx=probFacts(Q.p)+(CO.reveal?`\n${ansOf(Q.p)!=null?'Correct answer: ('+L5[ansOf(Q.p)]+'). ':''}${Q.p.sol?'Solution outline: '+Q.p.sol:''}\nThe student chose (${L5[Q.sel]}).`:'');CO.quick=CO.reveal?['Explain the solution step by step','Why is my answer wrong?','Teach me the idea behind this']:['Give me a hint','What kind of problem is this?','Check my first step']}
+ else if(CO.mode=='problLesson'&&PL.p&&PL.phase=='practice'&&PL.prac&&PL.prac.items&&PL.prac.items[PL.prac.i]){const pr=PL.prac,it=pr.items[pr.i],q=pQ(it),a=pAns(it),done=pr.ph=='feedback';
+  CO.ctx=`The student just learned how to solve this problem: ${probFacts(PL.p)}\n${methodOf(PL.p)}\nNow they are practising the SAME method on ${it.ai?'a new variation of it':'a past AMC problem solved the same way'}:\n${it.ai?'Problem: '+q.text+'\nChoices: '+q.choices.map((c,i)=>'('+L5[i]+') '+c).join('  '):probFacts(q)}\n`+
+   (done?`Correct answer: (${L5[a]}). The student chose (${L5[pr.sel]}).${it.ai&&it.solution.length?' Solution: '+it.solution.join(' '):''}`:'The student has NOT answered it yet: give hints and guiding questions only, pointing back to the steps of the lesson. Never state the final answer or which choice is correct.');
+  CO.quick=done?['Explain the solution step by step','Why is my answer wrong?','How is this the same as the lesson problem?']:['Give me a hint','How is this the same as the lesson problem?','Check my first step']}
  else if(CO.mode=='problLesson'&&PL.p){CO.ctx=`Teaching this specific problem: ${probFacts(PL.p)}${ansOf(PL.p)!=null?'\nCorrect answer: ('+L5[ansOf(PL.p)]+').':''}${PL.p.sol?'\nSolution: '+PL.p.sol:''}`;CO.quick=['Explain that step again differently','Why does this method work?','What would go wrong if I used a different approach?']}
  else{CO.ctx='';CO.quick=['How do I get faster at AMC problems?']}}
 const sysPrompt=()=>`You are Vertex's math tutor for students preparing for the AMC 10/12. Teach, do not just hand out problems: explain the idea in plain words, show one short worked step or example, then ask ONE quick question to check understanding and wait. If the student is wrong, name the specific misconception and correct it. Keep each reply under 130 words. ${STYLE}\n${CO.ctx}\n${CO.mode=='problem'&&!CO.reveal?'The student has NOT submitted an answer yet: give hints and guiding questions only. Never state the final answer or which choice is correct.':''}`;
@@ -3275,36 +3280,26 @@ async function ask(q){if(!AI||CO.busy)return;const inp=$('#askq');q=(q||(inp&&in
  PL.mainSel / PL.mainChecked = the student's own attempt at the real problem.
 */
 let PL={};
-/* Similar problems: each problem's `tags` are indices into TOP.topics — the ~78 specific
-   subtopics/techniques (e.g. "Telescoping sums", "Power of a point"), not the 4 broad
-   topic buckets. Genuine similarity means sharing one of THESE, ranked by how many are
-   shared, with comparable difficulty breaking ties — not just the broad topic at random. */
-function similarProblems(p,n){
- const seen=new Set([p.id]),out=[],eligible=x=>!seen.has(x.id)&&ansOf(x)!=null;
- const add=arr=>{for(const x of arr){if(out.length>=n)break;if(!seen.has(x.id)){seen.add(x.id);out.push(x)}}};
- const myTags=p.tags||[];
- if(myTags.length){
-  // Tier 1: shares at least one specific subtopic/technique — the real signal of "same skill required".
-  // More shared subtopics first, then whichever is closest in difficulty (comparable challenge to reinforce).
-  add(ALL.filter(x=>eligible(x)&&x.tags&&x.tags.some(t=>myTags.includes(t)))
-    .map(x=>[x,x.tags.filter(t=>myTags.includes(t)).length])
-    .sort((a,b)=>b[1]-a[1]||Math.abs(a[0].d-p.d)-Math.abs(b[0].d-p.d)||a[0].number-b[0].number)
-    .map(a=>a[0]));
-  // Tier 2: closely related subtopics (the same hand-curated REL pairing used to beef up practice
-  // for rare topics elsewhere), for when this problem's exact subtopic has too few neighbors.
-  if(out.length<n){
-   const relIdx=new Set();
-   myTags.forEach(i=>{const nm=TOP.topics[i]&&TOP.topics[i].n;
-    TOP.topics.forEach((t,j)=>{if(j!==i&&(REL[t.n]==nm||REL[nm]==t.n))relIdx.add(j)})});
-   if(relIdx.size)add(ALL.filter(x=>eligible(x)&&x.tags&&x.tags.some(t=>relIdx.has(t)))
-     .sort((a,b)=>Math.abs(a.d-p.d)-Math.abs(b.d-p.d)||a.number-b.number));
-  }
- }
- // Tier 3 (last resort — this problem has no subtopic tags, or still too few matches): same broad
- // topic and closest difficulty, so the student still gets practice rather than nothing.
- if(out.length<n)add(ALL.filter(x=>eligible(x)&&x.topic===p.topic)
-   .sort((a,b)=>Math.abs(a.d-p.d)-Math.abs(b.d-p.d)||a.number-b.number));
- return out}
+/* Ranking for "5 similar AMC 10 problems". Tags alone are too coarse (one tag covers 160 problems), so a candidate
+   scores on the subtopic tags it shares, weighted by how rare each tag is, plus how much of the problem's own
+   wording it shares (TF-IDF over the text: "remainder", "tangent", "digits" and the like), and loses score for
+   every step of difficulty away from the original. Problems the student has already answered rank a little lower.
+   When the AI is available it then re-reads the best candidates and keeps only the ones solved the same way. */
+let SIMX=null;
+const simWords=s=>(String(s||'').toLowerCase().replace(/\\/g,' ').match(/[a-z]{3,}/g)||[]).filter(w=>!SIMSTOP.has(w)).map(w=>w.length>4?w.replace(/(es|s)$/,''):w);
+const SIMSTOP=new Set('the and for that with are this what which how from have has its into than then there their each when where who whose will would can could all any not but let was were been being such only also other given what text frac cdot dfrac tfrac left right mathrm quad'.split(' '));
+function simIndex(){if(SIMX)return SIMX;const N=ALL.length,df=Object.create(null),tdf=Object.create(null),tfs=new Map();
+ ALL.forEach(p=>{const tf=Object.create(null);simWords(p.text||p.o).forEach(w=>tf[w]=(tf[w]||0)+1);tfs.set(p.id,tf);for(const w in tf)df[w]=(df[w]||0)+1;(p.tags||[]).forEach(t=>tdf[t]=(tdf[t]||0)+1)});
+ SIMX=new Map();ALL.forEach(p=>{const tf=tfs.get(p.id),v=Object.create(null),tv=Object.create(null);let n=0,tn=0;
+  for(const w in tf){const x=(1+Math.log(tf[w]))*Math.log(N/df[w]);v[w]=x;n+=x*x}
+  (p.tags||[]).forEach(t=>{const x=Math.log(N/tdf[t]);tv[t]=x;tn+=x*x});
+  SIMX.set(p.id,{v,n:Math.sqrt(n)||1,tv,tn:Math.sqrt(tn)||1,t:(p.tags||[]).length>0})});return SIMX}
+const simCos=(a,an,b,bn)=>{let s=0;for(const k in a)if(k in b)s+=a[k]*b[k];return s/(an*bn)};
+function simScore(p,x){const I=simIndex(),A=I.get(p.id),B=I.get(x.id);if(!A||!B)return 0;
+ const text=simCos(A.v,A.n,B.v,B.n),tag=A.t&&B.t?simCos(A.tv,A.tn,B.tv,B.tn):0;
+ let s=A.t?.55*tag+.45*text:text;if(x.topic===p.topic)s+=.04;if(counted(x.id))s*=.9;
+ return s*Math.max(.15,1-.22*Math.abs(x.d-p.d))}
+function rankSimilar(p,n){return ALL.filter(x=>x.id!==p.id&&x.text&&ansOf(x)!=null).map(x=>[x,simScore(p,x)]).sort((a,b)=>b[1]-a[1]||a[0].number-b[0].number).slice(0,n).map(a=>a[0])}
 /* ---------- lessons: hand-written first (lessons/<test>.json), then a saved AI lesson ----------
    A lesson is only used if its answer matches the answer key, so a wrong lesson is never shown. */
 const LESSONFILE={},lsKey=id=>'vertex-lesson:'+id;
@@ -3330,8 +3325,7 @@ function useLesson(L){PL.L=L;PL.conceptText=L.goal;PL.bridge=L.bridge||'';
  PL.steps=L.steps.map(st=>st.check?{title:st.title,explain:st.explain,q:st.check.q,opts:st.check.opts,ans:st.check.ans,why:st.check.why,ok:true}:{title:st.title,explain:st.explain,noCheck:true,ok:true})}
 function openProbLesson(id){
  const p=byId(id);if(!p)return;
- const sim=similarProblems(p,5);
- PL={p,phase:'loading',pids:sim.map(x=>x.id),pi:0,pSel:null,pPhase:'solve',
+ PL={p,phase:'loading',
      conceptText:'',steps:[],bridge:'',si:0,sel:null,checked:false,tries:0,gaveUp:false,
      mainSel:null,mainChecked:false};
  route='probLesson';render();window.scrollTo(0,0);
@@ -3500,35 +3494,156 @@ function probLessonHTML(){
   left+=`<div class="chs${p.text?'':' let'}" role="group">${L5.split('').map((l,i)=>`<button class="ch ${ans!=null&&i===ans?'ok':i===PL.mainSel?(ans==null?'sel':'bad'):''}" disabled data-i="${i}"><b>${l}</b>${p.text?`<span>${M(p.choices[i])}</span>`:''}</button>`).join('')}</div>
   <div class="ban ${ok?'ok':ans==null?'note':'bad'} mt2"><b>${ok?'Correct — you solved it yourself.':ans==null?'Recorded.':'Not quite — the answer is ('+L5[ans]+').'}</b></div>
   ${PL.L?plLessonEnd(PL.L):p.sol?`<div class="ban note mt2"><div class="ov">Full solution</div><p class="ptext mt2">${M(p.sol)}</p></div>`:''}
-  <div class="row mt"><button class="btn pri" onclick="startSimilar()">Try similar problems</button><button class="btn gh" onclick="closeProbLesson()">Back to problems</button></div>`}
+  ${pracChooser()}
+  <div class="row mt"><button class="btn gh" onclick="closeProbLesson()">Back to problems</button></div>`}
 
- // Phase: practice — similar problems
- else if(PL.phase==='practice'){
-  const pid=PL.pids[PL.pi],pp=pid&&byId(pid);
-  if(!pp){
-   left+=`<div class="ban ok"><h3>Lesson complete! 🎉</h3><p>You worked through the full problem and tried ${PL.pids.length} similar problem${PL.pids.length===1?'':'s'}. That is real practice.</p></div>
-   <div class="row mt"><button class="btn pri" onclick="closeProbLesson()">Back to problems</button></div>`}
-  else{
-   const done2=PL.pPhase==='feedback',ans2=ansOf(pp);
-   left+=`<span class="chip b mt">Similar practice · ${PL.pi+1} of ${PL.pids.length}</span>
-   <div class="cite mt2"><b>${cite(pp)}</b><span class="chip">${pp.topic}</span><span class="chip w">Difficulty ${pp.d}</span></div>
-   ${pp.text?`<div class="ptext mt2">${M(pp.text)}</div>`+(FIG[pp.id]?`<div class="fig"><img src="${FIG[pp.id]}" alt="Diagram"></div>`:''):shot(pp)}
-   <div class="chs${pp.text?'':' let'}" role="group">${L5.split('').map((l,i)=>`<button class="ch ${done2?(ans2!=null&&i===ans2?'ok':i===PL.pSel?(ans2==null?'sel':'bad'):''):(i===PL.pSel?'sel':'')}" ${done2?'disabled':''} data-i="${i}" onclick="plPickAns(${i})"><b>${l}</b>${pp.text?`<span>${M(pp.choices[i])}</span>`:''}</button>`).join('')}</div>
-   ${done2?plPracFb(pp):`<div class="row mt"><button class="btn pri" id="plsub" ${PL.pSel==null?'disabled':''} onclick="plSubmitAns()">Submit</button></div>`}`}}
+ // Phase: practice — 5 real AMC problems solved the same way, or 5 AI-made variations of this one
+ else if(PL.phase==='practice'&&PL.prac)left+=pracHTML();
 
  left+='</div>';
  return header+left+`<div class="card" id="coach">${coachHTML()}</div>`+footer}
 
-function plPickAns(i){PL.pSel=i;document.querySelectorAll('.ch').forEach(b=>b.classList.toggle('sel',+b.dataset.i===i));const s=$('#plsub');if(s)s.disabled=false}
-function plSubmitAns(){const pid=PL.pids[PL.pi],pp=pid&&byId(pid);if(!pp||PL.pSel==null)return;PL.pPhase='feedback';render()}
-function plPracFb(pp){
- const ans=ansOf(pp),ok=PL.pSel===ans,sol=pp.sol;
- let fb=`<div class="ban ${ok?'ok':ans==null?'note':'bad'} mt2"><b>${ok?'Correct! 🎯':ans==null?'Recorded.':'Not quite — the answer is ('+L5[ans]+').'}</b></div>`;
- if(!ok&&sol)fb+=`<div class="ban note mt2"><div class="ov">Solution hint</div><p>${M(sol)}</p></div>`;
- fb+=`<div class="row mt"><button class="btn pri" onclick="plNextPrac()">${PL.pi<PL.pids.length-1?'Next problem →':'Finish lesson'}</button></div>`;
- return fb}
-function plNextPrac(){PL.pi++;PL.pSel=null;PL.pPhase='solve';render();window.scrollTo(0,0)}
-function startSimilar(){PL.phase='practice';PL.pi=0;PL.pSel=null;PL.pPhase='solve';setCoach('problLesson');setCoachCtx();render();window.scrollTo(0,0)}
+/* ---------- practice after a lesson ----------
+   The point is repetition of the method just learned, not new ideas. Two sets:
+   'amc': five past AMC 10 problems. Ranked by rankSimilar, then (when the AI is on) the AI re-reads the best 24 and
+          keeps only those whose main step is the same method, each with one line on why.
+   'ai':  five new problems made from this one: same structure and steps, new numbers, names or wording. Every one
+          is solved again by a separate AI call that does not see the intended answer; only problems where both
+          agree are kept, so a student is never drilled on a wrong answer key.
+   PL.prac = {kind, busy, err, items, method, src, i, sel, ph:'solve'|'feedback', right}
+   items: {p, why, related} for 'amc'; {ai:true, text, choices, answer, solution:[...]} for 'ai'. */
+const pQ=it=>it.ai?it:it.p,pAns=it=>it.ai?it.answer:ansOf(it.p);
+const lsGet=k=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch(e){return null}},lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+const simKey=id=>'vertex-sim2:'+id,varKey=id=>'vertex-var1:'+id;
+// Pull one JSON object out of an AI reply. With `key`, the last object starting with that key (the reply may show work first).
+// LaTeX written with a single backslash (\frac) would become a control character, so lone backslashes are doubled first.
+function aiJSON(text,key){let t=String(text||'').replace(/```(?:json)?/gi,''),a=-1;
+ if(key){const re=new RegExp('\\{\\s*"'+key+'"','g');let m;while((m=re.exec(t)))a=m.index}else a=t.indexOf('{');
+ const b=t.lastIndexOf('}');if(a<0||b<a)throw new Error('The AI reply had no JSON.');
+ return JSON.parse(t.slice(a,b+1).replace(/(?<!\\)\\(?=[a-zA-Z]{2,}|[^"\\/bfnrtu])/g,'\\\\'))}
+// How the original is solved (its lesson when there is one), so both sets stay on the same method.
+function methodOf(p){const L=PL.p===p&&PL.L;
+ if(L&&Array.isArray(L.solution))return `Key idea: ${L.recognize||''}\nTools used: ${(L.tools||[]).map(t=>t.name).join('; ')}\nSolution steps:\n${L.solution.map((s,i)=>(i+1)+'. '+s).join('\n')}`;
+ return p.sol?'Solution: '+p.sol:'No written solution is on file: work out the intended solution yourself first.'}
+const ansLine=p=>{const a=ansOf(p);return a!=null?`Correct answer: (${L5[a]}) ${p.choices[a]}`:''};
+
+async function findSimilarAMC(p){
+ const cand=rankSimilar(p,24),plain=()=>({items:cand.slice(0,5).map(x=>({p:x})),src:'match'});
+ if(!AI)return plain();
+ const c=lsGet(simKey(p.id));
+ if(c&&Array.isArray(c.picks)){const items=c.picks.map(k=>({p:byId(k.id),why:k.why})).filter(x=>x.p);if(items.length)return fillSim({items,method:c.method,src:'ai'},cand)}
+ const prompt=`You are an expert AMC 10 coach. A student just learned how to solve the ORIGINAL problem below. Choose practice problems from the CANDIDATES that make the student use the SAME method again, so they master it by repetition instead of having to learn something new.
+
+ORIGINAL
+${probFacts(p)}
+${ansLine(p)}
+${methodOf(p)}
+
+CANDIDATES (number · difficulty out of 5 · problem)
+${cand.map((x,i)=>`[${i+1}] d${x.d} · ${String(x.text).replace(/\s+/g,' ').slice(0,650)}`).join('\n')}
+
+First name the core method of the original in one sentence a student would understand. Then choose up to 5 candidates whose MAIN solving step is that same method: the same kind of setup, the same key idea, and a similar sequence of steps. Reject candidates that only share the topic, need a different main idea, or are much harder or easier. Fewer than 5 is fine if only a few truly match. Order the picks from closest match to least close.
+Reply with ONE JSON object and nothing else:
+{"method":"one sentence","picks":[{"n":1,"why":"one short sentence on how this problem uses the same method"}]}
+Write math in LaTeX ($...$ inline). Because this is JSON, double every backslash.`;
+ let j;try{j=aiJSON((await AI(prompt)).text)}catch(e){return Object.assign(plain(),{note:e&&e.code?aiErr(e):'The AI could not check these just now, so they are matched by topic and wording only.'})}
+ const seen=new Set(),picks=[];
+ for(const k of Array.isArray(j.picks)?j.picks:[]){const x=cand[(+k.n)-1];if(x&&!seen.has(x.id)&&picks.length<5){seen.add(x.id);picks.push({id:x.id,why:String(k.why||'').trim()})}}
+ const method=String(j.method||'').trim();
+ lsSet(simKey(p.id),{method,picks,at:Date.now()});
+ return fillSim({items:picks.map(k=>({p:byId(k.id),why:k.why})),method,src:'ai'},cand)}
+// Fewer than 5 true matches: top up with the next best by topic and wording, clearly labelled as looser matches.
+function fillSim(r,cand){const have=new Set(r.items.map(x=>x.p.id));
+ for(const x of cand){if(r.items.length>=5)break;if(!have.has(x.id)){have.add(x.id);r.items.push({p:x,related:true})}}return r}
+
+function varPrompt(p,ans,made){return `You are an expert AMC 10 problem writer. A student just learned how to solve the ORIGINAL problem below. Write 6 new practice problems that drill EXACTLY the same method, so the student repeats the steps they just learned until they own them.
+
+ORIGINAL (${cite(p)}, difficulty ${p.d} of 5)
+${probFacts(p)}
+Correct answer: (${L5[ans]}) ${p.choices[ans]}
+HOW IT IS SOLVED (these are the steps every new problem must use):
+${methodOf(p)}
+
+Rules for every new problem:
+- Same structure and the same solving steps, in the same order, as the original. A student who understood the original solution must be able to solve it with no new idea, trick or formula.
+- Change only small things: the numbers, the names, objects or setting, or the wording. Do not add or remove conditions, do not change what kind of quantity is asked for, and keep the difficulty the same.
+- Choose numbers so every step works out as cleanly as in the original (whole numbers or simple fractions where the original has them). Check each computation.
+- Self-contained in words: the student sees no diagram, so describe any figure fully.
+- Exactly 5 answer choices in the same style as the original, exactly one correct; the wrong ones are answers that common mistakes would give. Vary which letter is correct across the problems.
+- The 6 problems must differ from each other and from the original.
+- "solution": the original's solution steps redone with the new numbers, one short step per item, ending with the answer.${made.length?`\nThese problems are already written, so do not repeat them:\n${made.map(x=>'- '+x.text.slice(0,200)).join('\n')}`:''}
+
+Reply with ONE JSON object and nothing else (no code fences):
+{"method":"one sentence naming the method being practised","problems":[{"text":"...","choices":["","","","",""],"answer":"C","solution":["step","step"]}]}
+Write all math in LaTeX ($...$ inline), including each answer choice (for example "$12$"). Because this is JSON, double every backslash: \\\\frac, \\\\sqrt. Currency as \\\\$5. Keep every string on one line.`}
+function cleanVariant(v){if(!v||typeof v.text!='string'||!v.text.trim()||!Array.isArray(v.choices)||v.choices.length!=5)return null;
+ const choices=v.choices.map(c=>String(c==null?'':c).trim()),L=String(v.answer||'').trim().toUpperCase().replace(/[^A-E]/g,'');
+ if(L.length!=1||choices.some(c=>!c)||new Set(choices.map(c=>c.replace(/[\s$]/g,''))).size<5)return null;
+ const sol=(Array.isArray(v.solution)?v.solution:[v.solution]).map(s=>String(s||'').trim()).filter(Boolean);
+ return{ai:true,text:v.text.trim(),choices,answer:L5.indexOf(L),solution:sol}}
+// A separate call solves each new problem without seeing the intended answer; returns true where it agrees.
+async function checkVariants(list){
+ const r=await AI(`Solve each multiple-choice problem below carefully and independently. Work each one out step by step before choosing; do not guess.
+
+${list.map((x,i)=>`PROBLEM ${i+1}: ${x.text}\nChoices: ${x.choices.map((c,k)=>'('+L5[k]+') '+c).join('   ')}`).join('\n\n')}
+
+After your work, finish with ONE JSON object on its own line, one entry per problem in order:
+{"answers":[{"n":1,"letter":"A"}]}`);
+ const j=aiJSON(r.text,'answers'),got={};
+ (Array.isArray(j.answers)?j.answers:[]).forEach(a=>{got[+a.n]=String(a.letter||'').trim().toUpperCase().slice(0,1)});
+ return list.map((x,i)=>got[i+1]===L5[x.answer])}
+async function makeVariants(p,fresh){
+ if(!fresh){const c=lsGet(varKey(p.id));if(c&&Array.isArray(c.items)&&c.items.length)return{items:c.items,method:c.method,src:'ai'}}
+ const ans=ansOf(p);if(ans==null)throw new Error('This problem has no answer key yet, so new versions of it cannot be checked.');
+ const kept=[],seen=new Set();let method='',tried=0;
+ for(let round=0;round<2&&kept.length<5;round++){
+  let j;try{j=aiJSON((await AI(varPrompt(p,ans,kept))).text)}catch(e){if(e&&e.code)throw e;continue}
+  method=method||String(j.method||'').trim();
+  const cand=(Array.isArray(j.problems)?j.problems:[]).map(cleanVariant).filter(x=>x&&!seen.has(x.text));if(!cand.length)continue;
+  tried+=cand.length;const ok=await checkVariants(cand);
+  cand.forEach((x,i)=>{if(seen.has(x.text))return;seen.add(x.text);if(ok[i]&&kept.length<5)kept.push(x)})} // a problem that failed the check never comes back
+ if(!kept.length)throw new Error(tried?'None of the new problems passed the answer check. Try again for a fresh set.':'The AI could not write practice problems just now. Try again.');
+ lsSet(varKey(p.id),{items:kept,method,at:Date.now()});
+ return{items:kept,method,src:'ai'}}
+
+function pracChooser(){const sign=aiNeedsSignIn();
+ return `<div class="pr-pick mt"><h2>Practice what you just learned</h2><p class="t2">Five more problems that need this same method, so it sticks.</p>
+ <div class="pr-opts">
+  <button class="pr-opt" onclick="startPractice('amc')"><b>5 similar AMC 10 problems</b><span>Real past problems that test the same idea and are solved a similar way.</span></button>
+  <button class="pr-opt" ${AI?'':'disabled'} onclick="startPractice('ai')"><b>5 AI-made variations</b><span>New problems built from this one: the same steps, with new numbers and wording.</span>${AI?'':`<em>${sign?'Sign in to use this.':'Needs the AI tutor, which is not connected here.'}</em>`}</button>
+ </div>${sign?aiGate(true):''}</div>`}
+function startPractice(kind,fresh){const p=PL.p;if(!p||(kind=='ai'&&!AI))return;
+ const pr={kind,busy:true,items:[],i:0,sel:null,ph:'solve',right:0};PL.prac=pr;PL.phase='practice';
+ setCoach('problLesson');render();window.scrollTo(0,0);
+ (kind=='ai'?makeVariants(p,fresh):findSimilarAMC(p)).then(r=>Object.assign(pr,r),e=>{pr.err=e&&e.code?aiErr(e):(e&&e.message)||String(e)})
+  .then(()=>{pr.busy=false;if(PL.prac===pr&&route=='probLesson'){setCoachCtx();render()}})}
+function pracHTML(){const pr=PL.prac,ai=pr.kind=='ai',other=ai?'amc':'ai';
+ const sw=`<button class="btn sm gh" onclick="startPractice('${other}')" ${other=='ai'&&!AI?'disabled':''}>${ai?'Real AMC problems instead':'AI variations instead'}</button>`;
+ if(pr.busy)return `<div class="tutor-thinking"><div class="dots-pulse"></div><p class="mono mt2">${ai?'Writing practice problems from this one and checking every answer. This takes about half a minute…':'Finding past AMC 10 problems solved the same way…'}</p></div>`;
+ if(pr.err||!pr.items.length)return `<div class="ban bad"><b>${esc(pr.err||'No practice problems were found for this one.')}</b></div><div class="row mt"><button class="btn pri" onclick="startPractice('${pr.kind}',true)">Try again</button>${sw}<button class="btn gh" onclick="closeProbLesson()">Back to problems</button></div>`;
+ const n=pr.items.length,it=pr.items[pr.i];
+ let h=`<div class="row"><span class="chip b">${ai?'AI-made variation':'Similar AMC 10 problem'}${it?` · ${pr.i+1} of ${n}`:''}</span><span class="sp"></span>${sw}</div>`;
+ if(pr.method)h+=`<div class="ban info mt2"><div class="ov">The method you are practising</div><p class="ptext mt2">${M(pr.method)}</p></div>`;
+ if(pr.note)h+=`<p class="mono mt2">${esc(pr.note)}</p>`;
+ if(!it){const all=pr.right==n;
+  return h+`<div class="ban ok mt2"><h3>Practice set done 🎉</h3><p>You got ${pr.right} of ${n} right. ${all?'Same method, '+n+' times in a row: that is how it sticks.':'Look back at the steps of the ones you missed, then try another set to lock the method in.'}</p></div>
+  <div class="row mt">${ai?`<button class="btn pri" onclick="startPractice('ai',true)">5 new variations</button>`:''}<button class="btn${ai?'':' pri'}" onclick="startPractice('${other}')" ${other=='ai'&&!AI?'disabled':''}>${ai?'5 similar AMC 10 problems':'5 AI-made variations'}</button><button class="btn gh" onclick="closeProbLesson()">Back to problems</button></div>`}
+ const q=pQ(it),ans=pAns(it),done=pr.ph=='feedback';
+ h+=ai?`<div class="cite mt2"><span class="chip">Based on ${cite(PL.p)}</span><span class="chip w">Difficulty ${PL.p.d}</span></div>`
+  :`<div class="cite mt2"><b>${cite(q)}</b><span class="chip">${q.topic}</span><span class="chip w">Difficulty ${q.d}</span></div>
+   ${it.why?`<p class="t2 mt2"><b>Same method:</b> ${M(it.why)}</p>`:it.related?`<p class="t2 mt2">A looser match: same topic and similar wording, but the main step may differ.</p>`:''}`;
+ h+=`<div class="ptext mt2">${M(q.text)}</div>${!ai&&FIG[q.id]?`<div class="fig"><img src="${FIG[q.id]}" alt="Diagram"></div>`:''}
+  <div class="chs" role="group">${L5.split('').map((l,i)=>`<button class="ch ${done?(ans!=null&&i===ans?'ok':i===pr.sel?(ans==null?'sel':'bad'):''):(i===pr.sel?'sel':'')}" ${done?'disabled':''} data-i="${i}" onclick="pracPick(${i})"><b>${l}</b><span>${M(q.choices[i])}</span></button>`).join('')}</div>`;
+ if(!done)return h+`<div class="row mt"><button class="btn pri" id="plsub" ${pr.sel==null?'disabled':''} onclick="pracSubmit()">Submit</button></div>`;
+ const ok=pr.sel===ans;
+ h+=`<div class="ban ${ok?'ok':ans==null?'note':'bad'} mt2"><b>${ok?'Correct! 🎯':ans==null?'Recorded.':'Not quite. The answer is ('+L5[ans]+').'}</b></div>`;
+ if(ai&&it.solution.length)h+=`<div class="ban note mt2"><div class="ov">Solution: the same steps as the lesson</div><ol class="pl-sol">${it.solution.map(s=>`<li>${M(s)}</li>`).join('')}</ol></div>`;
+ else if(!ai&&q.sol)h+=`<div class="ban note mt2"><div class="ov">Solution</div><p class="ptext mt2">${M(q.sol)}</p></div>`;
+ else if(!ai)h+=`<p class="t2 mt2">${aopsLink(q)}${AI?' · or ask your tutor to walk through it.':''}</p>`;
+ return h+`<div class="row mt"><button class="btn pri" onclick="pracNext()">${pr.i<n-1?'Next problem →':'Finish'}</button></div>`}
+function pracPick(i){const pr=PL.prac;if(!pr||pr.ph!='solve')return;pr.sel=i;document.querySelectorAll('.ch').forEach(b=>b.classList.toggle('sel',+b.dataset.i===i));const s=$('#plsub');if(s)s.disabled=false}
+function pracSubmit(){const pr=PL.prac,it=pr&&pr.items[pr.i];if(!it||pr.sel==null||pr.ph!='solve')return;pr.ph='feedback';if(pr.sel===pAns(it))pr.right++;setCoachCtx();render()}
+function pracNext(){const pr=PL.prac;if(!pr)return;pr.i++;pr.sel=null;pr.ph='solve';setCoach('problLesson');render();window.scrollTo(0,0)}
 function closeProbLesson(){PL={};route=prevRoute||'trainer';render();window.scrollTo(0,0)}
 let prevRoute='trainer';
 /* ---------- Learn: teach first, worked example, quick checks, then real AMC problems easy to hard ---------- */
@@ -3729,7 +3844,10 @@ function dashboard(){const acc=S.solved?Math.round(100*S.correct/S.solved):0,s=S
 function resetAll(b){if(b.dataset.s){b.disabled=true;vertexUse(blankState());Promise.resolve(window.onVertexReset&&onVertexReset()).catch(()=>{}).finally(()=>{NOSAVE=true;try{localStorage.removeItem('vertex-v3')}catch(e){}location.reload()})}else{b.dataset.s=1;b.textContent='Click again to confirm reset'}}
 /* ---------- routing ---------- */
 const views={dashboard,concepts,trainer,lessons,library,probLesson:()=>probLessonHTML()};
-function render(){document.querySelectorAll('.side a').forEach(a=>a.classList.toggle('on',a.dataset.r==route));const m=$('#main');if(!m)return;m.innerHTML=views[route]?views[route]():'';syncClocks();draw();fillImgs();chatScroll()}
+function render(){document.querySelectorAll('.side a').forEach(a=>a.classList.toggle('on',a.dataset.r==route));const m=$('#main');if(!m)return;
+ const inp=$('#askq'),draft=inp?inp.value:'',focused=inp&&document.activeElement===inp,co=CO; // keep a half-typed tutor question
+ m.innerHTML=views[route]?views[route]():'';syncClocks();draw();fillImgs();chatScroll();
+ const ni=$('#askq');if(ni&&draft&&CO===co){ni.value=draft;if(focused)ni.focus()}}
 function go(){const h=location.hash.slice(1),r=views[h]?h:'dashboard',was=route;
  if(r!=='probLesson')prevRoute=r;
  route=r;
