@@ -36,7 +36,7 @@ button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-vis
 .dots{display:flex;gap:5px;flex-wrap:wrap}.dots i{width:26px;height:6px;border-radius:9px;background:var(--sub)}.dots i.d{background:var(--ok)}.dots i.c{background:var(--br)}
 .cite{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.cite b{font:600 17px var(--disp)}
 textarea,input[type=text],select{width:100%;font:inherit;color:var(--ink);background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:10px 12px}textarea{min-height:96px;resize:vertical}
-.chat{max-height:340px;overflow:auto;margin:10px 0;display:flex;flex-direction:column;gap:8px}.m{padding:9px 12px;border-radius:12px;font-size:14.5px;max-width:94%;overflow-x:auto}.m.bot{background:var(--sub)}.m.me{background:var(--br);color:#fff;align-self:flex-end}
+.chat{position:relative;height:clamp(280px,52vh,480px);overflow-y:auto;overscroll-behavior:contain;margin:10px 0;padding:4px 6px 4px 0;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}.chat>.m{flex:none}.chat-empty{margin:auto;text-align:center;color:var(--t3);font-size:14px;max-width:240px}.co-h{display:flex;align-items:center;gap:8px}.co-h h3{margin:0}.co-q{display:flex;flex-wrap:wrap;gap:6px}@media (min-width:901px){#coach{position:sticky;top:16px;height:min(calc(100vh - 32px),760px);display:flex;flex-direction:column}#coach>*{flex:none}#coach>.chat{flex:1 1 auto;height:auto;min-height:140px}}.m{padding:9px 12px;border-radius:12px;font-size:14.5px;line-height:1.55;max-width:94%;overflow-x:auto;overflow-y:hidden;overflow-wrap:anywhere}.m.bot{background:var(--sub)}.m.me{background:var(--br);color:#fff;align-self:flex-end}
 .traw{font:500 .92em var(--mono)}mjx-container{position:relative;display:inline-block;direction:ltr;max-width:100%}mjx-container svg{overflow:visible}mjx-container[display="true"]{display:block;text-align:center;margin:.7em 0;overflow-x:auto;overflow-y:hidden}mjx-assistive-mml{position:absolute!important;top:0;left:0;clip:rect(1px,1px,1px,1px);padding:1px 0 0 0!important;border:0!important;display:block!important;width:auto!important;overflow:hidden!important;user-select:none}
 .tabs{display:flex;gap:8px;flex-wrap:wrap}.tabs button{font:500 13.5px var(--body);padding:8px 14px;border-radius:99px;border:1px solid var(--bd);background:var(--sf);color:var(--t2);cursor:pointer}.tabs button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .slow{border-top:4px solid var(--no)}.fast{border-top:4px solid var(--ok)}ol{margin:.4em 0;padding-left:1.3em}li{margin:.3em 0}
@@ -3210,7 +3210,7 @@ window.vertexUse=function(next){const before=JSON.stringify([S.live||null,cmPos(
  try{localStorage.setItem('vertex-v3',JSON.stringify(S))}catch(e){}
  if(moved)return reenter();
  const ae=document.activeElement;if(JSON.stringify(S)!==prev&&!(ae&&/TEXTAREA|INPUT|SELECT/.test(ae.tagName)))render()};
-function reenter(){if(route=='concepts'||route=='trainer')Q=QS[route]||null;if(route=='concepts')cmEnter();else if(route=='trainer'&&!(Q&&Q.tr))trPick();render()}
+function reenter(){if(route=='concepts'||route=='trainer')Q=QS[route]||null;if(route=='concepts')cmEnter();else if(route=='trainer'&&!(Q&&Q.tr))trPick();if(route=='trainer')coachFor(Q);render()}
 function probCard(){const p=Q.p,done=Q.phase!='solve',ans=ansOf(p),long=p.text&&p.choices.some(c=>c.length>32);
  return `<div class="cite"><b>${cite(p)}</b><span class="chip">${p.topic}</span><span class="chip w">Difficulty ${p.d} of 5</span></div>${p.text?`<div class="ptext">${M(p.text)}</div>${FIG[p.id]?`<div class="fig"><img src="${FIG[p.id]}" alt="Diagram for ${cite(p)}"></div>`:''}`:shot(p)}
  <div class="chs${long?' long':''}${p.text?'':' let'}" role="group" aria-label="Answer choices">${L5.split('').map((l,i)=>`<button class="ch ${done?(ans!=null&&i==ans?'ok':i==Q.sel?(ans==null?'sel':'bad'):''):(i==Q.sel?'sel':'')}" ${done?'disabled':''} data-i="${i}" onclick="choose(${i})" aria-label="Choice ${l}"><b>${l}</b>${p.text?`<span>${M(p.choices[i])}</span>`:''}</button>`).join('')}</div>`}
@@ -3234,18 +3234,31 @@ function fbHTML(){const f=Q.fb||{},p=Q.p,chip={sound:['o','Sound reasoning'],par
  `<div class="row mt2"><button class="btn" onclick="openProbLesson(Q.p.id)">📖 Teach me how to solve this problem</button></div>`}
 /* ---------- tutor panel ---------- */
 let CO={mode:'',chat:[],turns:[],reveal:false,ctx:'',quick:[]};
-function setCoach(mode){CO={mode,chat:[],turns:[],reveal:false,ctx:'',quick:[]};setCoachCtx()}
+function setCoach(mode){CO={mode,chat:[],turns:[],reveal:false,ctx:'',quick:[],q:mode=='problem'?Q:null};setCoachCtx()}
+// The tutor belongs to the question on screen: a question restored after a refresh or another page gets its own tutor; the same question keeps its chat.
+function coachFor(q){if(!q||(CO.mode=='problem'&&CO.q===q))return;setCoach('problem');CO.reveal=q.phase!='solve';setCoachCtx()}
 function setCoachCtx(){const c=S.cm.cur&&CON[S.cm.cur];
  if(CO.mode=='lesson'&&c){CO.ctx=`The student is in a lesson on "${c.name}". Key ideas: ${c.ideas.map(i=>i.t+': '+i.h).join(' | ')}. Worked example: ${c.ex.q}`;CO.quick=['Explain this idea a different way','Show me another worked example','Ask me a quick check question']}
  else if(CO.mode=='problem'&&Q){CO.ctx=probFacts(Q.p)+(CO.reveal?`\n${ansOf(Q.p)!=null?'Correct answer: ('+L5[ansOf(Q.p)]+'). ':''}${Q.p.sol?'Solution outline: '+Q.p.sol:''}\nThe student chose (${L5[Q.sel]}).`:'');CO.quick=CO.reveal?['Explain the solution step by step','Why is my answer wrong?','Teach me the idea behind this']:['Give me a hint','What kind of problem is this?','Check my first step']}
  else if(CO.mode=='problLesson'&&PL.p){CO.ctx=`Teaching this specific problem: ${probFacts(PL.p)}${ansOf(PL.p)!=null?'\nCorrect answer: ('+L5[ansOf(PL.p)]+').':''}${PL.p.sol?'\nSolution: '+PL.p.sol:''}`;CO.quick=['Explain that step again differently','Why does this method work?','What would go wrong if I used a different approach?']}
  else{CO.ctx='';CO.quick=['How do I get faster at AMC problems?']}}
 const sysPrompt=()=>`You are Vertex's math tutor for students preparing for the AMC 10/12. Teach, do not just hand out problems: explain the idea in plain words, show one short worked step or example, then ask ONE quick question to check understanding and wait. If the student is wrong, name the specific misconception and correct it. Keep each reply under 130 words. ${STYLE}\n${CO.ctx}\n${CO.mode=='problem'&&!CO.reveal?'The student has NOT submitted an answer yet: give hints and guiding questions only. Never state the final answer or which choice is correct.':''}`;
-function coachHTML(){return `<h3>Tutor</h3>${AI?`<p class="mono">Live AI tutor (${AIname})</p>`:aiNeedsSignIn()?aiGate():'<p class="mono">AI tutor is not connected here. Lessons, checks and solutions still work.</p>'}<div class="chat" id="chat" aria-live="polite">${CO.chat.map(([w,t])=>`<div class="m ${w}">${M(t)}</div>`).join('')}</div>${AI?`<div class="row">${CO.quick.map((q,i)=>`<button class="btn sm" onclick="ask(CO.quick[${i}])">${q}</button>`).join('')}</div><div class="row mt2"><input type="text" id="askq" placeholder="Ask your tutor…" aria-label="Ask your tutor" onkeydown="if(event.key=='Enter')ask()"><button class="btn pri" id="asksend" onclick="ask()">Send</button></div>`:''}`}
-function renderCoach(){const e=$('#coach');if(!e)return;e.innerHTML=coachHTML();const c=$('#chat');if(c)c.scrollTop=c.scrollHeight}
-async function ask(q){if(!AI||CO.busy)return;q=(q||($('#askq')||{}).value||'').trim();if(!q)return;CO.chat.push(['me',q],['bot','Thinking…']);CO.busy=true;renderCoach();
- try{const r=await AI([{role:'user',content:sysPrompt()},{role:'assistant',content:'Understood.'},...CO.turns,{role:'user',content:q}]);CO.turns.push({role:'user',content:q},{role:'assistant',content:r.text});CO.chat[CO.chat.length-1]=['bot',r.text]}catch(e){CO.chat[CO.chat.length-1]=['bot',aiErr(e)]}
- CO.busy=false;renderCoach()}
+/* The chat keeps a fixed height and the whole conversation scrolls inside it; every message keeps its natural size. */
+function coachHTML(){const n=CO.chat.length;
+ return `<div class="co-h"><h3>Tutor</h3><span class="sp"></span>${AI||n?`<button class="btn sm gh" id="coclear" onclick="clearChat()" ${n?'':'disabled'} title="Start a new conversation with the tutor">Clear chat</button>`:''}</div>${AI?`<p class="mono">Live AI tutor (${AIname})</p>`:aiNeedsSignIn()?aiGate():'<p class="mono">AI tutor is not connected here. Lessons, checks and solutions still work.</p>'}`+
+ (AI||n?`<div class="chat" id="chat" role="log" aria-live="polite" aria-label="Conversation with your tutor" tabindex="0">${n?CO.chat.map(([w,t])=>`<div class="m ${w}">${M(t)}</div>`).join(''):'<p class="chat-empty">Ask a question, or pick one below to get started.</p>'}</div>`:'')+
+ (AI?`<div class="co-q">${CO.quick.map((q,i)=>`<button class="btn sm" onclick="ask(CO.quick[${i}])">${q}</button>`).join('')}</div><div class="row mt2"><input type="text" id="askq" placeholder="Ask your tutor…" aria-label="Ask your tutor" onkeydown="if(event.key=='Enter')ask()"><button class="btn pri" id="asksend" onclick="ask()" ${CO.busy?'disabled':''}>${CO.busy?'…':'Send'}</button></div>`:'')}
+// Show the newest question at the top of the box, so a long answer is read from its start; short exchanges simply end at the bottom.
+function chatScroll(){const c=$('#chat');if(!c)return;const me=c.querySelectorAll('.m.me'),last=me[me.length-1];c.style.scrollBehavior='auto';c.scrollTop=last?last.offsetTop-6:c.scrollHeight;c.style.scrollBehavior=''}
+// Rebuild the tutor panel without losing a question the student is still typing.
+function renderCoach(){const e=$('#coach');if(!e)return;const inp=$('#askq'),draft=inp?inp.value:'',focused=inp&&document.activeElement===inp;
+ e.innerHTML=coachHTML();chatScroll();const ni=$('#askq');if(ni){ni.value=draft;if(focused)ni.focus()}}
+function clearChat(){CO.chat=[];CO.turns=[];CO.gen=(CO.gen||0)+1;CO.busy=false;renderCoach();const i=$('#askq');if(i)i.focus()}
+async function ask(q){if(!AI||CO.busy)return;const inp=$('#askq');q=(q||(inp&&inp.value)||'').trim();if(!q)return;if(inp&&!arguments[0])inp.value='';
+ const co=CO,gen=co.gen||0,live=()=>CO===co&&(co.gen||0)===gen; // a cleared chat or a new problem drops a late answer
+ co.chat.push(['me',q],['bot','Thinking…']);co.busy=true;renderCoach();let text;
+ try{const r=await AI([{role:'user',content:sysPrompt()},{role:'assistant',content:'Understood.'},...co.turns,{role:'user',content:q}]);text=r.text;if(live())co.turns.push({role:'user',content:q},{role:'assistant',content:r.text})}catch(e){text=aiErr(e)}
+ if(!live())return;co.chat[co.chat.length-1]=['bot',text];co.busy=false;renderCoach()}
 /* ---------- Problem-specific interactive lesson (structured, non-chat mode) ---------- */
 /*
  PL state machine:
@@ -3531,7 +3544,7 @@ function cmEnter(){cmBoot();const s=S.cm;LS={};Q=null;if(!s.cur){QS.concepts=nul
  if(s.stage=='learn')lsInit();
  if(s.stage=='reteach'){LS.chk=pick(CON[s.cur].checks)();LS.tries=0}
  const p=cmProb(),old=QS.concepts;if(!p){QS.concepts=null;return}
- if(old&&old.key==cmKey()&&old.p.id===p.id){Q=old;setCoach('problem');CO.reveal=Q.phase!='solve';setCoachCtx()}
+ if(old&&old.key==cmKey()&&old.p.id===p.id){Q=old;coachFor(Q)}
  else{newQ(p,'concepts');Q.needWhy=true;Q.key=cmKey()}}
 function cmGo(stage,extra){Object.assign(S.cm,{stage},extra||{});QS.concepts=null;cmEnter();save();render();window.scrollTo(0,0)}
 function lsInit(){const st=lessonSteps(CON[S.cm.cur])[S.cm.step];LS={rev:0};if(st&&st.k=='check'){LS.chk=CON[S.cm.cur].checks[st.i]();LS.tries=0}}
@@ -3716,13 +3729,14 @@ function dashboard(){const acc=S.solved?Math.round(100*S.correct/S.solved):0,s=S
 function resetAll(b){if(b.dataset.s){b.disabled=true;vertexUse(blankState());Promise.resolve(window.onVertexReset&&onVertexReset()).catch(()=>{}).finally(()=>{NOSAVE=true;try{localStorage.removeItem('vertex-v3')}catch(e){}location.reload()})}else{b.dataset.s=1;b.textContent='Click again to confirm reset'}}
 /* ---------- routing ---------- */
 const views={dashboard,concepts,trainer,lessons,library,probLesson:()=>probLessonHTML()};
-function render(){document.querySelectorAll('.side a').forEach(a=>a.classList.toggle('on',a.dataset.r==route));const m=$('#main');if(!m)return;m.innerHTML=views[route]?views[route]():'';syncClocks();draw();fillImgs();const c=$('#chat');if(c)c.scrollTop=c.scrollHeight}
+function render(){document.querySelectorAll('.side a').forEach(a=>a.classList.toggle('on',a.dataset.r==route));const m=$('#main');if(!m)return;m.innerHTML=views[route]?views[route]():'';syncClocks();draw();fillImgs();chatScroll()}
 function go(){const h=location.hash.slice(1),r=views[h]?h:'dashboard',was=route;
  if(r!=='probLesson')prevRoute=r;
  route=r;
  if(r=='concepts'||r=='trainer')Q=QS[r]||null;
  if(r=='concepts'&&(was!='concepts'||!S.cm.cur))cmEnter();
  if(r=='trainer'&&!(Q&&Q.tr))trPick();
+ if(r=='trainer')coachFor(Q);
  render();if(was!==r&&APP)save()}
 // Start where the student left off (this browser's copy; cloud.js then merges in the account's copy).
 liveRestore();LAST.pos=cmPos();LAST.live=JSON.stringify(liveSnap());APP=true;
